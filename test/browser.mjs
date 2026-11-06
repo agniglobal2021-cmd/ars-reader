@@ -234,6 +234,34 @@ const shot = (p, name) => p.screenshot({ path: join(out, `${name}.png`) });
 	await p.context().close();
 }
 
+// ── «Добавить книгу»: data and cover from the file, without showing it ──
+{
+	const p = await page({ viewport: { width: 1180, height: 820 } }, "add-book");
+	let r = await H(p, "bookFile", EPUB, "Светлый град.epub");
+	check("add: epub data", r.data.title === "Светлый град: тестовая книга" && r.data.author.join("|") === "Иван Тестов|Мария Проверкина"
+		&& r.data.translator.join() === "Пётр Переводчиков" && r.data.year === 2026 && r.data.ISBN === "9785170906227" && r.data.language === "ru", JSON.stringify(r.data));
+	check("add: epub annotation as plain text", r.data.annotation === "Книга для проверки Читальни.\n\nВторой абзац.", JSON.stringify(r.data.annotation));
+	check("add: epub cover found", r.cover?.type === "image/png" && r.cover.size > 0, JSON.stringify(r.cover));
+	check("add: small cover kept at its size, as JPEG", r.prepared?.ext === "jpg" && r.prepared.width === 300 && r.prepared.height === 450, JSON.stringify(r.prepared));
+	r = await H(p, "bookFile", FB2, "Записки на полях.fb2");
+	check("add: fb2 data with the edition's year and ISBN", r.data.title === "Записки на полях" && r.data.author.join() === "Анна Полевая" && r.data.year === 2025
+		&& r.data.ISBN === "9785000000002" && r.data.publisher === "Самиздат" && r.data.annotation === "Тестовая книга в FB2.", JSON.stringify(r.data));
+	check("add: fb2 cover from inside the book", r.cover?.size > 0 && r.prepared?.width === 200, JSON.stringify(r));
+	r = await H(p, "bookFile", FBZ, "Записки в архиве.fb2.zip");
+	check("add: fb2.zip read", r.data.title === "Записки на полях" && r.cover !== null, JSON.stringify(r.data));
+	r = await H(p, "bookFile", CBZ, "Комикс.cbz");
+	check("add: cbz: first page as the cover", r.cover !== null && r.data.title === "Комикс", JSON.stringify(r));
+	const bad = await H(p, "unreadable", "Заметка.txt");
+	check("add: an unknown file explains itself", bad.startsWith("FormMessage") && bad.includes("формат"), bad);
+	const c = await H(p, "covers");
+	check("cover: a big picture comes down to 800 on the long side", c.big?.ext === "jpg" && c.big.size[0] === 533 && c.big.size[1] === 800, JSON.stringify(c.big));
+	check("cover: a small JPEG stays as it is", c.small?.ext === "jpg" && c.small.same === true, JSON.stringify(c.small));
+	check("cover: transparent becomes white, not black", c.clearPixel[0] > 240 && c.clearPixel[1] > 240 && c.clearPixel[2] > 240, JSON.stringify(c.clearPixel));
+	check("cover: SVG drawn into a JPEG", c.svg?.ext === "jpg", JSON.stringify(c.svg));
+	check("cover: not a picture — nothing", c.junk === null);
+	await p.context().close();
+}
+
 await browser.close();
 server.close();
 for (const e of errors) failures.push(`page error: ${e}`);

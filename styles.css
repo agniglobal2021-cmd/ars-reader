@@ -296,3 +296,304 @@ body.is-phone .ars-outline-view .markdown-source-view,
 body.is-phone .ars-outline-view .markdown-preview-view {
 	--list-indent: 1.25em;
 }
+
+/* «Добавить книгу» и «Данные книги». Цвета и шрифты — из темы Obsidian */
+.ars-book-modal {
+	width: min(640px, calc(100vw - 32px));
+}
+
+.ars-book-modal .modal-content {
+	display: flex;
+	flex-direction: column;
+}
+
+.ars-book-form {
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+	padding-bottom: 8px;
+}
+
+.ars-book-file-input {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	opacity: 0;
+	pointer-events: none;
+}
+
+.ars-book-pick {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 8px;
+	padding: 24px 16px;
+	border: 1px dashed var(--background-modifier-border-hover, var(--background-modifier-border));
+	border-radius: var(--radius-l, 12px);
+	text-align: center;
+}
+
+.ars-book-modal button.ars-book-pick-button {
+	min-height: var(--ars-reader-touch);
+	padding: 0 24px;
+	font-size: var(--font-ui-medium);
+}
+
+.ars-book-error {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 12px;
+	padding: 10px 12px;
+	border-radius: var(--radius-m, 8px);
+	background: color-mix(in srgb, var(--text-error) 12%, transparent);
+	color: var(--text-error);
+}
+
+.ars-book-modal .ars-book-error button {
+	min-height: 36px;
+}
+
+.ars-book-main {
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+
+.ars-book-top {
+	display: flex;
+	gap: 16px;
+	align-items: flex-start;
+}
+
+.ars-book-cover-col {
+	flex: 0 0 128px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 6px;
+}
+
+/* Обложка как на полке Apple Books: 2 к 3, скруглённая, с лёгкой тенью */
+.ars-book-modal button.ars-book-cover {
+	display: block;
+	width: 100%;
+	height: auto;
+	aspect-ratio: 2 / 3;
+	padding: 0;
+	overflow: hidden;
+	border: none;
+	border-radius: 6px;
+	background: var(--background-secondary);
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 4px 14px rgba(0, 0, 0, 0.16);
+	cursor: pointer;
+}
+
+.ars-book-cover img {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.ars-book-cover-empty {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: 6px;
+	width: 100%;
+	height: 100%;
+	padding: 10px;
+	background: linear-gradient(160deg, color-mix(in srgb, var(--interactive-accent) 78%, #000), color-mix(in srgb, var(--interactive-accent) 45%, #000));
+	color: #fff;
+	text-align: center;
+	white-space: normal;
+	overflow: hidden;
+}
+
+.ars-book-cover-title {
+	font-weight: 600;
+	font-size: 14px;
+	line-height: 1.25;
+	overflow-wrap: anywhere;
+}
+
+.ars-book-cover-author {
+	font-size: 12px;
+	opacity: 0.85;
+	overflow-wrap: anywhere;
+}
+
+.ars-book-modal button.ars-book-cover-button {
+	min-height: 36px;
+	padding: 0 10px;
+	border: none;
+	background: none;
+	box-shadow: none;
+	color: var(--text-accent);
+	font-size: var(--font-ui-small);
+}
+
+.ars-book-fields {
+	flex: 1 1 auto;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.ars-book-field {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 0;
+}
+
+.ars-book-label {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+/* 16px и больше: iOS не увеличивает страницу при фокусе */
+.ars-book-form input[type="text"],
+.ars-book-form textarea {
+	width: 100%;
+	min-height: 40px;
+	font-size: max(16px, var(--font-ui-medium));
+}
+
+.ars-book-form textarea {
+	min-height: 7.5em;
+	resize: vertical;
+	line-height: 1.45;
+	font-family: var(--font-text);
+}
+
+.ars-book-row {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 12px;
+}
+
+.ars-book-section {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+/* Полка: как переключатель в iOS */
+.ars-book-segments {
+	display: flex;
+	padding: 2px;
+	border-radius: 9px;
+	background: var(--background-modifier-hover);
+}
+
+.ars-book-modal button.ars-book-segment {
+	flex: 1 1 0;
+	min-height: 36px;
+	padding: 0 8px;
+	border: none;
+	border-radius: 7px;
+	background: none;
+	box-shadow: none;
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+}
+
+.ars-book-modal button.ars-book-segment.is-active {
+	background: var(--background-primary);
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
+	font-weight: 600;
+}
+
+.ars-book-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.ars-book-modal button.ars-book-chip {
+	min-height: 36px;
+	padding: 0 14px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 999px;
+	background: none;
+	box-shadow: none;
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+}
+
+.ars-book-modal button.ars-book-chip.is-active {
+	border-color: var(--interactive-accent);
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.ars-book-add {
+	display: flex;
+	gap: 8px;
+}
+
+.ars-book-add input[type="text"] {
+	flex: 1 1 auto;
+}
+
+.ars-book-modal button.ars-book-add-button {
+	flex: 0 0 auto;
+	width: 40px;
+	min-height: 40px;
+	padding: 0;
+}
+
+.ars-book-file {
+	font-size: var(--font-ui-smaller);
+	overflow-wrap: anywhere;
+}
+
+/* Кнопки всегда видны внизу формы */
+.ars-book-buttons {
+	position: sticky;
+	bottom: 0;
+	z-index: 1;
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 4px;
+	padding: 12px 0 calc(4px + env(safe-area-inset-bottom, 0px));
+	border-top: 1px solid var(--background-modifier-border);
+	background: var(--modal-background, var(--background-primary));
+}
+
+.ars-book-modal .ars-book-buttons button {
+	min-height: var(--ars-reader-touch);
+	padding: 0 20px;
+}
+
+/* iPhone: обложка над полями, всё крупнее под палец */
+.ars-book-modal.is-phone .ars-book-top {
+	flex-direction: column;
+	align-items: center;
+}
+
+.ars-book-modal.is-phone .ars-book-cover-col {
+	flex-basis: auto;
+	width: 112px;
+}
+
+.ars-book-modal.is-phone .ars-book-fields {
+	width: 100%;
+}
+
+.ars-book-modal.is-phone .ars-book-form input[type="text"] {
+	min-height: 44px;
+}
+
+.ars-book-modal.is-phone button.ars-book-segment,
+.ars-book-modal.is-phone button.ars-book-chip {
+	min-height: 40px;
+}
+
+.ars-book-modal.is-phone .ars-book-buttons button {
+	flex: 1 1 0;
+}

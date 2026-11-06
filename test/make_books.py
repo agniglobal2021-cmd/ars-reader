@@ -110,6 +110,7 @@ def make_epub(path):
 <dc:publisher>Издательство «Проверка»</dc:publisher>
 <dc:date>2026-05-01</dc:date>
 <dc:language>ru</dc:language>
+<dc:description>&lt;p&gt;Книга для &lt;b&gt;проверки&lt;/b&gt; Читальни.&lt;/p&gt;&lt;p&gt;Второй абзац.&lt;/p&gt;</dc:description>
 <meta property="dcterms:modified">2026-05-01T00:00:00Z</meta>
 <meta name="cover" content="cover-img"/>
 </metadata>

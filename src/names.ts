@@ -1,4 +1,7 @@
-// Note names: «Автор — Название» for the card, «… (конспект)» for the outline.
+// Note names: «Автор — Название» for the card, «… (конспект)» for the outline, «… (обложка)» for
+// the cover, and the same «Автор — Название» for the book's file.
+import type { TFile } from "obsidian";
+import { extensionOf } from "./book-meta";
 
 export function safeName(s: string, max = 120): string {
 	let out = s
@@ -74,4 +77,49 @@ export function titleScore(basename: string, noteTitle: unknown, bookTitle: stri
 		else if (t.length >= 4 && n.includes(t)) best = Math.max(best, 1);
 	}
 	return best;
+}
+
+export function coverName(base: string): string {
+	return `${base} (обложка)`;
+}
+
+/** Where the book's files go for one «Автор — Название». */
+export interface Names {
+	base: string;
+	card: string;
+	book?: string;
+	cover?: string;
+	outline?: string;
+}
+
+export interface Owned {
+	card: TFile;
+	book?: TFile | null;
+	cover?: TFile | null;
+	outline?: TFile | null;
+}
+
+const dirOf = (f: TFile) => (f.parent?.path && f.parent.path !== "/" ? f.parent.path : "");
+const withExt = (base: string, ext: string) => (ext ? `${base}.${ext}` : base);
+
+/**
+ * Names of the four files for «base»: the card and the outline stay in their folders, the book
+ * goes to the books folder unless it is somewhere inside it already, the cover stays in the covers
+ * folder. «base 2», «base 3»… when another file already has one of these names.
+ */
+export function planNames(base: string, files: Owned, folders: { books: string; covers: string }, taken: (path: string) => boolean): Names {
+	const { book, cover, outline, card } = files;
+	const bookDir = book ? (inFolder(book.path, folders.books) ? dirOf(book) : folders.books) : "";
+	const coverDir = cover ? (inFolder(cover.path, folders.covers) ? dirOf(cover) : folders.covers) : "";
+	for (let i = 1; ; i++) {
+		const b = i === 1 ? base : `${base} ${i}`;
+		const n: Names = {
+			base: b,
+			card: joinPath(dirOf(card), `${b}.md`),
+			book: book ? joinPath(bookDir, withExt(b, extensionOf(book.name))) : undefined,
+			cover: cover ? joinPath(coverDir, withExt(coverName(b), cover.extension)) : undefined,
+			outline: outline ? joinPath(dirOf(outline), `${outlineName(b)}.md`) : undefined,
+		};
+		if (![n.card, n.book, n.cover, n.outline].some((p) => p !== undefined && taken(p))) return n;
+	}
 }

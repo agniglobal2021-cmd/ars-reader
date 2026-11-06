@@ -1,20 +1,25 @@
 import { getIconIds, MarkdownView, Notice, Plugin, PluginSettingTab, Setting, TFile, type App, type Editor, type MarkdownFileInfo } from "obsidian";
 import { renderAppearance } from "./appearance";
 import { Cards } from "./card";
+import { Library } from "./library";
 import { cleanFolder } from "./names";
+import { NoteViews } from "./note-views";
 import { indentStyle, runOp, type PanelOp } from "./outline/editing";
 import { Outlines } from "./outline/outlines";
 import { OutlinePanel } from "./outline/panel";
-import { OutlineViews } from "./outline/views";
 import { BOOK_EXTENSIONS, ReaderView, VIEW_TYPE } from "./reader-view";
 import { clampSettings, DEFAULT_SETTINGS, type ReaderSettings } from "./settings";
-import { cardTemplate, createFromTemplate } from "./templates";
+import { whenIndexed } from "./vault";
+
+/** Old cards are converted a little after start-up, when sync has brought what the other device did. */
+const MIGRATE_AFTER_MS = 20_000;
 
 export default class ReaderPlugin extends Plugin {
 	settings: ReaderSettings = { ...DEFAULT_SETTINGS };
 	cards!: Cards;
 	outlines!: Outlines;
-	private outlineViews!: OutlineViews;
+	library!: Library;
+	private noteViews!: NoteViews;
 	private panel!: OutlinePanel;
 	private icons: Set<string> | null = null;
 
@@ -22,10 +27,9 @@ export default class ReaderPlugin extends Plugin {
 		await this.loadSettings();
 		this.cards = new Cards(this.app, {
 			folders: () => ({ cards: this.settings.cardsFolder, outlines: this.settings.outlinesFolder }),
-			template: (path) => cardTemplate(this.app, this.settings.cardTemplate, path),
-			createFromTemplate: (template, folder, basename) => createFromTemplate(this.app, template, folder, basename),
 		});
 		this.outlines = new Outlines(this);
+		this.library = new Library(this);
 		this.registerView(VIEW_TYPE, (leaf) => new ReaderView(leaf, this));
 
 		const taken: string[] = [];
@@ -54,10 +58,35 @@ export default class ReaderPlugin extends Plugin {
 		// The side panel opening (a swipe) resizes the workspace
 		this.registerEvent(this.app.workspace.on("resize", () => this.followAll()));
 
-		this.outlineViews = new OutlineViews(this);
-		this.outlineViews.start();
+		this.noteViews = new NoteViews(this);
+		this.noteViews.start();
 		this.panel = new OutlinePanel(this);
 		this.panel.start();
+
+		this.addRibbonIcon(this.icon(["book-plus", "library", "book"]), "Добавить книгу", () => this.library.openAdd());
+		this.addCommand({ id: "add-book", name: "Добавить книгу", callback: () => this.library.openAdd() });
+		this.addCommand({
+			id: "book-data",
+			name: "Данные книги",
+			checkCallback: (checking) => {
+				const reader = this.app.workspace.getActiveViewOfType(ReaderView);
+				if (reader) {
+					if (!checking) void reader.openData();
+					return true;
+				}
+				const note = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
+				if (!note || !this.cards.isCard(note)) return false;
+				if (!checking) void this.library.openEdit(note, (card, fields) => this.cardChanged(card, fields.title));
+				return true;
+			},
+		});
+
+		this.app.workspace.onLayoutReady(() => {
+			void whenIndexed(this.app).then(() => {
+				const timer = window.setTimeout(() => void this.migrateCards(), MIGRATE_AFTER_MS);
+				this.register(() => window.clearTimeout(timer));
+			});
+		});
 
 		const withReader = (fn: (v: ReaderView) => void) => (checking: boolean) => {
 			const view = this.app.workspace.getActiveViewOfType(ReaderView);
@@ -105,8 +134,22 @@ export default class ReaderPlugin extends Plugin {
 
 	onunload(): void {
 		this.panel?.stop();
-		this.outlineViews?.stop();
+		this.noteViews?.stop();
 		document.body.removeClass("ars-reader-immersive");
+	}
+
+	/** Cards and outlines of 0.1 and 0.2: English property names become Russian, once. */
+	private async migrateCards(): Promise<void> {
+		const n = await this.cards.migrateAll();
+		if (n) new Notice(`Читальня: свойства карточек и конспектов теперь по-русски (${n}).`, 6000);
+	}
+
+	/** A card's data changed: the open books follow. */
+	cardChanged(card: TFile, title: string): void {
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
+			if (leaf.view instanceof ReaderView) leaf.view.cardChanged(card, title);
+		}
+		this.noteViews?.sync();
 	}
 
 	/** The first icon of the list that this Obsidian has; icon names change between versions. */
@@ -117,8 +160,11 @@ export default class ReaderPlugin extends Plugin {
 
 	private onLeafChange(): void {
 		const active = this.app.workspace.getActiveViewOfType(ReaderView);
-		if (active) active.syncImmersive(true);
-		else document.body.removeClass("ars-reader-immersive");
+		if (active) {
+			active.syncImmersive(true);
+			// A book restored in the background asks for its data when you come to it
+			active.askFirst();
+		} else document.body.removeClass("ars-reader-immersive");
 		this.followAll();
 	}
 
@@ -145,7 +191,7 @@ export default class ReaderPlugin extends Plugin {
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
 			if (leaf.view instanceof ReaderView) leaf.view.applySettings();
 		}
-		this.outlineViews?.sync();
+		this.noteViews?.sync();
 	}
 
 	async onExternalSettingsChange(): Promise<void> {
@@ -153,7 +199,7 @@ export default class ReaderPlugin extends Plugin {
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
 			if (leaf.view instanceof ReaderView) leaf.view.applySettings();
 		}
-		this.outlineViews?.sync();
+		this.noteViews?.sync();
 	}
 }
 
@@ -167,14 +213,14 @@ class ReaderSettingTab extends PluginSettingTab {
 		el.empty();
 		el.createEl("p", {
 			cls: "ars-reader-muted",
-			text: "Книга открывается касанием по файлу. Место, где ты остановился, хранится в карточке книги — "
-				+ "обычной заметке в папке «Книги», — и через синхронизацию доезжает до других устройств. "
-				+ "Настройки вида свои у каждого устройства.",
+			text: "Книга добавляется кнопкой «Добавить книгу» на левой панели или открывается касанием по файлу. "
+				+ "Место, где ты остановился, хранится в карточке книги — обычной заметке в папке «Книги», — "
+				+ "и через синхронизацию доезжает до других устройств. Настройки вида свои у каждого устройства.",
 		});
 		renderAppearance(el, this.plugin, () => this.display());
 
-		new Setting(el).setName("Карточки и конспекты").setHeading();
-		const folder = (name: string, desc: string, key: "cardsFolder" | "outlinesFolder") => new Setting(el)
+		new Setting(el).setName("Папки").setHeading();
+		const folder = (name: string, desc: string, key: "cardsFolder" | "outlinesFolder" | "booksFolder" | "coversFolder") => new Setting(el)
 			.setName(name)
 			.setDesc(desc)
 			.addText((t) => t
@@ -183,6 +229,10 @@ class ReaderSettingTab extends PluginSettingTab {
 				.onChange(async (v) => this.plugin.updateSettings({ [key]: cleanFolder(v) || DEFAULT_SETTINGS[key] })));
 		folder("Папка карточек", "Карточка книги: «Автор — Название».", "cardsFolder");
 		folder("Папка конспектов", "Конспект книги: «Автор — Название (конспект)», заголовок на каждую главу.", "outlinesFolder");
+		folder("Папка книг", "Файлы книг: «Автор — Название.epub».", "booksFolder");
+		folder("Папка обложек", "Обложки: «Автор — Название (обложка).jpg».", "coversFolder");
+
+		new Setting(el).setName("Конспект").setHeading();
 		new Setting(el)
 			.setName("Где открывать конспект")
 			.setDesc("В правой панели книга остаётся на месте, панель выдвигается свайпом от правого края; на iPad её можно закрепить булавкой. Рядом с книгой — отдельная панель на широком экране и вкладка на узком.")
@@ -191,12 +241,5 @@ class ReaderSettingTab extends PluginSettingTab {
 				.addOption("beside", "Рядом с книгой")
 				.setValue(this.plugin.settings.outlinePlace)
 				.onChange(async (v) => this.plugin.updateSettings({ outlinePlace: v === "beside" ? "beside" : "sidebar" })));
-		new Setting(el)
-			.setName("Шаблон карточки")
-			.setDesc("Путь к шаблону новой карточки. Пусто — шаблон папки из Templater, если он задан, иначе простая карточка.")
-			.addText((t) => t
-				.setPlaceholder("Templates/Книга.md")
-				.setValue(this.plugin.settings.cardTemplate)
-				.onChange(async (v) => this.plugin.updateSettings({ cardTemplate: v })));
 	}
 }

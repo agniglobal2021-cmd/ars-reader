@@ -1,52 +1,34 @@
-import { FileView, Notice, Platform, type App, type Menu, type TFile, type WorkspaceLeaf } from "obsidian";
+import { FileView, Notice, Platform, type Menu, type TFile, type WorkspaceLeaf } from "obsidian";
 import type { Progress, TOCItem } from "../vendor/foliate-js/view.js";
 import { AppearanceModal } from "./appearance";
 import { readLook, resolveTheme } from "./book-css";
-import { cardMeta, formatOf, type CardMeta } from "./book-meta";
-import { STATUS, type Position } from "./card";
-import { pickCard } from "./card-picker";
+import { bookData, formatOf, type BookData } from "./book-meta";
+import { STATUS, type FileFacts, type Position } from "./card";
 import { bookChapters, chapterIndex, chapterOf, type Chapter } from "./chapters";
 import { partialMd5 } from "./fingerprint";
+import { BOOK_EXTENSIONS, explainOpenError, MIME } from "./formats";
+import { coverOf } from "./book-file";
 import type ReaderPlugin from "./main";
 import { cardName } from "./names";
 import { ReaderCore } from "./reader-core";
 import { SAVE_EVERY_MS } from "./settings";
 import { ThoughtModal } from "./thought-modal";
 import { TocModal, type ChapterMark } from "./toc-modal";
+import { whenIndexed } from "./vault";
 
 export const VIEW_TYPE = "ars-reader";
-/** Opened by a tap in the file list. FB2 in zip ("x.fb2.zip") opens from the file menu: Obsidian sees it as zip. */
-export const BOOK_EXTENSIONS = ["epub", "fb2", "fbz", "mobi", "azw3", "azw", "cbz"];
-
-const MIME: Record<string, string> = {
-	epub: "application/epub+zip",
-	fb2: "application/x-fictionbook+xml",
-	"fb2.zip": "application/x-zip-compressed-fb2",
-	fbz: "application/x-zip-compressed-fb2",
-	cbz: "application/vnd.comicbook+zip",
-	mobi: "application/x-mobipocket-ebook",
-	azw: "application/vnd.amazon.ebook",
-	azw3: "application/vnd.amazon.ebook",
-};
+export { BOOK_EXTENSIONS };
 
 const IMMERSIVE = "ars-reader-immersive";
-const INDEX_WAIT_MS = 15_000;
-
-/** Waits (a limited time) for Obsidian to finish loading its note index at start-up. */
-function whenIndexed(app: App): Promise<void> {
-	const cache = app.metadataCache as unknown as { initialized?: boolean };
-	if (cache.initialized !== false) return Promise.resolve();
-	return new Promise((resolve) => {
-		const done = () => {
-			app.metadataCache.offref(ref);
-			window.clearTimeout(timer);
-			resolve();
-		};
-		const ref = app.metadataCache.on("resolved", done);
-		const timer = window.setTimeout(done, INDEX_WAIT_MS);
-	});
-}
 const HINT_MS = 7000;
+
+/** A book opened without a card: the form waits until the book is on screen. */
+interface FirstOpen {
+	facts: FileFacts;
+	data: BookData;
+	ticket: number;
+	asked: boolean;
+}
 
 export class ReaderView extends FileView {
 	private core: ReaderCore | null = null;
@@ -67,6 +49,7 @@ export class ReaderView extends FileView {
 	private readonly hinted = new Set<number>();
 	private hintEl: HTMLElement | null = null;
 	private hintTimer = 0;
+	private first: FirstOpen | null = null;
 	private stageEl!: HTMLElement;
 	private footerEl!: HTMLElement;
 	private statusEl!: HTMLElement;
@@ -137,6 +120,7 @@ export class ReaderView extends FileView {
 
 	onPaneMenu(menu: Menu, source: string): void {
 		menu.addItem((i) => i.setTitle("Вид").setIcon("type").onClick(() => this.openAppearance()));
+		menu.addItem((i) => i.setTitle("Данные книги").setIcon(this.plugin.icon(["square-pen", "pencil-line", "pencil"])).onClick(() => void this.openData()));
 		menu.addItem((i) => i.setTitle("Карточка книги").setIcon("file-text").onClick(() => void this.openCard()));
 		super.onPaneMenu(menu, source);
 	}
@@ -147,9 +131,9 @@ export class ReaderView extends FileView {
 		this.build();
 		this.showMessage("Открываю книгу…");
 		try {
-			const data = new Uint8Array(await this.app.vault.readBinary(file));
+			const bytes = new Uint8Array(await this.app.vault.readBinary(file));
 			if (ticket !== this.loading) return;
-			const fingerprint = partialMd5(data);
+			const fingerprint = partialMd5(bytes);
 			const cards = this.plugin.cards;
 			// Right after Obsidian starts the note index may still be loading: a card is not seen yet
 			await whenIndexed(this.app);
@@ -157,7 +141,7 @@ export class ReaderView extends FileView {
 			let card = cards.find(file, fingerprint);
 			const location = card ? cards.location(card) : null;
 			const format = formatOf(file.name);
-			const book = new File([data], file.name, { type: MIME[format] ?? "" });
+			const book = new File([bytes], file.name, { type: MIME[format] ?? "" });
 			const core = await ReaderCore.open(this.stageEl, {
 				file: book,
 				settings: this.plugin.settings,
@@ -174,68 +158,113 @@ export class ReaderView extends FileView {
 			}
 			this.core = core;
 			this.stageEl.querySelector(".ars-reader-message")?.remove();
-			const meta = cardMeta(core.book.metadata, file.basename);
-			this.chapters = bookChapters(core, meta.title);
+			const data = bookData(core.book.metadata, file.basename);
+			this.chapters = bookChapters(core, data.title);
 			this.chapterMap = chapterIndex(this.chapters);
 			this.chapter = chapterOf(this.chapterMap, core.progress?.tocItem);
-			this.title = meta.title;
-			(this.leaf as unknown as { updateHeader?: () => void }).updateHeader?.();
-			// The book is open by now: a card that cannot be written must not take the book away
-			try {
-				card = card ? await this.keepCard(card, file, meta) : await this.newCard(file, fingerprint, meta, format, ticket);
-			} catch (e) {
-				console.error("[ars-reader] card", e);
-				new Notice(`Читальня: карточка книги не записалась, место не запомнится. ${e instanceof Error ? e.message : ""}`, 10000);
-				card = null;
-			}
-			if (ticket !== this.loading) return;
-			this.card = card;
+			this.title = data.title;
 			this.saved = location ?? "";
-			this.outline = card ? cards.outlineOf(card) : null;
-			if (card) this.furthest = Math.max(this.furthest, cards.furthest(card));
+			// The book took a moment to open; the index may know the card by now. Never make it twice.
+			card ??= cards.find(file, fingerprint);
+			if (card) {
+				// The book is open by now: a card that cannot be written must not take the book away
+				try {
+					await this.keepCard(card, file, data);
+				} catch (e) {
+					console.error("[ars-reader] card", e);
+					new Notice(`Читальня: карточка книги не записалась, место не запомнится. ${e instanceof Error ? e.message : ""}`, 10000);
+					card = null;
+				}
+				if (ticket !== this.loading) return;
+				if (card) this.useCard(card, cards.title(card) || data.title);
+			} else {
+				this.first = { facts: { book: file, fingerprint, format, translator: data.translator }, data, ticket, asked: false };
+			}
+			this.updateHeader();
+			this.askFirst();
 		} catch (e) {
 			if (ticket !== this.loading) return;
 			console.error("[ars-reader]", e);
-			this.showMessage(this.explain(e), true);
+			this.showMessage(explainOpenError(e), true);
 		}
 	}
 
-	/** A known card: a 0.1 card moves into «Книги», a wish-list one becomes «читаю». */
-	private async keepCard(card: TFile, book: TFile, meta: CardMeta): Promise<TFile> {
+	/** The book's title in the tab and in the header. Obsidian puts the file name there after a rename. */
+	private updateHeader(): void {
+		(this as unknown as { titleEl?: HTMLElement }).titleEl?.setText(this.getDisplayText());
+		(this.leaf as unknown as { updateHeader?: () => void }).updateHeader?.();
+	}
+
+	private useCard(card: TFile, title: string): void {
 		const cards = this.plugin.cards;
-		if (await cards.relocate(card, book, meta)) {
+		this.card = card;
+		this.first = null;
+		this.outline = cards.outlineOf(card);
+		this.furthest = Math.max(this.furthest, cards.furthest(card));
+		this.title = title;
+		this.updateHeader();
+	}
+
+	/** A known card: a 0.1 card moves into «Книги», one not started becomes «читаю», an old one gets its cover. */
+	private async keepCard(card: TFile, book: TFile, data: BookData): Promise<void> {
+		const cards = this.plugin.cards;
+		if (await cards.relocate(card, book, cardName(data))) {
 			new Notice(`Читальня: карточка книги переехала в «${this.plugin.settings.cardsFolder}».`, 6000);
 		}
 		await cards.markOpened(card);
-		return card;
+		const core = this.core;
+		if (core && !cards.cover(card)) {
+			void this.plugin.library.coverFromBook(card, core.book).catch((e) => console.error("[ars-reader] cover", e));
+		}
 	}
 
 	/**
-	 * First open: a note named «Автор — Название» in «Книги» becomes the card; if only similar
-	 * notes are there, you choose; otherwise a new card is made.
+	 * First open of a book without a card: the form «Данные книги», filled from the file. Only once
+	 * the book is on screen: a tab restored in the background at start-up waits until you look at it.
 	 */
-	private async newCard(book: TFile, fingerprint: string, meta: CardMeta, format: string, ticket: number): Promise<TFile | null> {
-		const cards = this.plugin.cards;
-		// The book took a moment to open; the index may know the card by now. Never make it twice.
-		const known = cards.find(book, fingerprint);
-		if (known) return this.keepCard(known, book, meta);
-		const exact = cards.byName(meta);
-		if (exact) {
-			await cards.adopt(exact, book, fingerprint, meta, format);
-			return exact;
-		}
-		const candidates = cards.candidates(meta);
-		if (candidates.some((c) => c.score > 0)) {
-			const chosen = await pickCard(this.app, cardName(meta), candidates);
-			if (ticket !== this.loading) return null;
-			if (chosen) {
-				await cards.adopt(chosen, book, fingerprint, meta, format);
-				return chosen;
+	askFirst(force = false): void {
+		const first = this.first;
+		if (!first || (first.asked && !force) || !this.core || first.ticket !== this.loading) return;
+		if (!this.containerEl.isShown()) return;
+		first.asked = true;
+		void (async () => {
+			const cover = this.core ? await coverOf(this.core.book) : null;
+			const got = await this.plugin.library.firstOpen(first.facts, first.data, cover);
+			if (first.ticket !== this.loading || this.first !== first) return;
+			if (!got) {
+				new Notice("Читальня: книга без карточки — место не запомнится. Заполнить данные можно в меню ⋮ → «Данные книги».", 8000);
+				return;
 			}
+			this.useCard(got.card, got.title);
+			void this.save();
+		})().catch((e) => {
+			console.error("[ars-reader] first open", e);
+			new Notice(`Читальня: карточка книги не записалась. ${e instanceof Error ? e.message : ""}`, 10000);
+		});
+	}
+
+	/** «Данные книги»: the form for this book's card, or the first-open form when there is none yet. */
+	async openData(): Promise<void> {
+		const card = this.card;
+		if (card) {
+			await this.save();
+			await this.plugin.library.openEdit(card, (c, fields) => this.plugin.cardChanged(c, fields.title));
+			return;
 		}
-		const card = await cards.create(book, fingerprint, meta, format);
-		new Notice(`Читальня: карточка «${card.basename}»`, 4000);
-		return card;
+		if (this.first) this.askFirst(true);
+	}
+
+	/** The card was edited elsewhere (its own header, the library): the title follows. */
+	cardChanged(card: TFile, title: string): void {
+		if (this.card !== card) return;
+		this.title = title;
+		this.outline = this.plugin.cards.outlineOf(card) ?? this.outline;
+		this.updateHeader();
+	}
+
+	async onRename(file: TFile): Promise<void> {
+		await super.onRename(file);
+		this.updateHeader();
 	}
 
 	async onUnloadFile(file: TFile): Promise<void> {
@@ -266,6 +295,7 @@ export class ReaderView extends FileView {
 		this.chapterMap = new Map();
 		this.chapter = null;
 		this.pendingFollow = false;
+		this.first = null;
 		this.hinted.clear();
 		this.hideHint();
 		this.setImmersive(false);
@@ -291,17 +321,6 @@ export class ReaderView extends FileView {
 		if (error) this.stageEl.empty();
 		this.stageEl.querySelector(".ars-reader-message")?.remove();
 		this.stageEl.createDiv({ cls: `ars-reader-message${error ? " is-error" : ""}`, text });
-	}
-
-	private explain(e: unknown): string {
-		const name = (e as { name?: string; constructor?: { name?: string } })?.constructor?.name ?? "";
-		const msg = e instanceof Error ? e.message : String(e);
-		if (name === "UnsupportedTypeError" || /not supported/i.test(msg)) {
-			return msg === "PDF"
-				? "PDF Читальня пока не открывает. Его покажет встроенный просмотрщик Obsidian."
-				: "Этот формат Читальня не знает. Она открывает EPUB, FB2, FB2 в zip, MOBI, AZW3 и CBZ.";
-		}
-		return `Не получилось открыть книгу: ${msg}`;
 	}
 
 	private theme() {

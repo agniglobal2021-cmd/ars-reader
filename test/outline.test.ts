@@ -190,9 +190,8 @@ function op(text: string, o: Op, style = TAB): string | null {
 }
 
 // ── the panel's buttons on an editor ──
-import type { App, Editor, TFile } from "obsidian";
+import type { App, Editor } from "obsidian";
 import { indentStyle, replaceMinimal, runOp } from "../src/outline/editing";
-import { cardTemplate, createFromTemplate, fillCoreTemplate } from "../src/templates";
 
 class FakeEditor {
 	folds = 0;
@@ -253,74 +252,4 @@ const asEditor = (e: FakeEditor) => e as unknown as Editor;
 	const appWith = (cfg: Record<string, unknown>) => ({ vault: { getConfig: (k: string) => cfg[k] } }) as unknown as App;
 	same("indent style from the vault", indentStyle(appWith({ useTab: false, tabSize: 2 })), { useTab: false, tabSize: 2 });
 	same("indent style defaults", indentStyle(appWith({})), { useTab: true, tabSize: 4 });
-}
-
-// ── card templates ──
-{
-	const files = new Map<string, { path: string; content: string }>();
-	const created: string[] = [];
-	const tf = (path: string, content = "") => {
-		const f = { path, basename: path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/, ""), extension: "md", content };
-		files.set(path, f);
-		return f as unknown as TFile;
-	};
-	const general = tf("T/Общий.md");
-	const lit = tf("T/Литература.md");
-	const bookT = tf("T/Книга.md", "# {{title}}\nДобавлено {{date:YYYY}}");
-	const tp = tf("T/Темплейтер.md", "<% tp.file.title %>");
-	let enabled = true;
-	const calls: unknown[][] = [];
-	const settings = {
-		enable_folder_templates: true,
-		folder_templates: [{ folder: "/", template: "T/Общий.md" }, { folder: "03 Resources/Литература", template: "T/Литература" }],
-		enable_file_templates: false,
-		file_templates: [{ regex: ".*", template: "T/Общий.md" }],
-	};
-	const app = {
-		plugins: {
-			get enabledPlugins() { return new Set(enabled ? ["templater-obsidian"] : []); },
-			plugins: {
-				"templater-obsidian": {
-					settings,
-					templater: {
-						create_new_note_from_template: async (...args: unknown[]) => {
-							calls.push(args);
-							return tf(`${args[1]}/${args[2]}.md`);
-						},
-					},
-				},
-			},
-		},
-		vault: {
-			getFileByPath: (p: string) => (files.get(p) as unknown as TFile) ?? null,
-			getFolderByPath: () => null,
-			read: async (f: TFile) => files.get(f.path)!.content,
-			create: async (p: string, content: string) => (created.push(`${p}::${content}`), tf(p, content)),
-		},
-	} as unknown as App;
-	const at = "03 Resources/Литература/Книги/А — Т.md";
-	check("template from settings wins", cardTemplate(app, "T/Книга", at) === bookT);
-	check("missing template from settings: none", cardTemplate(app, "T/Нет.md", at) === null);
-	check("Templater folder template above the cards folder", cardTemplate(app, "", at) === lit);
-	settings.folder_templates.push({ folder: "03 Resources/Литература/Книги", template: "T/Книга.md" });
-	check("the deepest folder template", cardTemplate(app, "", at) === bookT);
-	check("a template for the whole vault is not a book's", cardTemplate(app, "", "Другое/X.md") === null);
-	settings.enable_file_templates = true;
-	check("catch-all file rule is ignored too", cardTemplate(app, "", "Другое/X.md") === null);
-	settings.file_templates.push({ regex: "Книги/", template: "T/Темплейтер.md" });
-	settings.enable_folder_templates = false;
-	check("file-name rule", cardTemplate(app, "", at) === tp);
-	settings.file_templates.push({ regex: "(", template: "T/Общий.md" });
-	check("a broken rule does not break the rest", cardTemplate(app, "", at) === tp);
-
-	const made = await createFromTemplate(app, bookT, "03 Resources/Литература/Книги", "А — Т");
-	check("with Templater: Templater makes the note", made?.path === "03 Resources/Литература/Книги/А — Т.md" && calls.length === 1 && calls[0][2] === "А — Т" && calls[0][3] === false, JSON.stringify(calls));
-	enabled = false;
-	check("without Templater: no folder template", cardTemplate(app, "", at) === null);
-	void general;
-	const plain = await createFromTemplate(app, bookT, "К", "Название");
-	check("without Templater: core placeholders filled", plain?.path === "К/Название.md" && /^К\/Название\.md::# Название\nДобавлено \d{4}$/.test(created[0]), created[0]);
-	check("a Templater template is not copied raw", (await createFromTemplate(app, tp, "К", "X")) === null);
-	const fixed = { format: (f: string) => `<${f}>` };
-	same("core template tokens", fillCoreTemplate("{{title}} {{ date }} {{time}} {{date:DD.MM}}", "Т", fixed), "Т <YYYY-MM-DD> <HH:mm> <DD.MM>");
 }

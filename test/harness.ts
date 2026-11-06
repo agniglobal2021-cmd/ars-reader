@@ -2,7 +2,9 @@
 import type { Progress } from "../vendor/foliate-js/view.js";
 import { readLook } from "../src/book-css";
 import { bookChapters, chapterIndex, chapterOf } from "../src/chapters";
-import { cardMeta } from "../src/book-meta";
+import { readBook } from "../src/book-file";
+import { bookData } from "../src/book-meta";
+import { prepareCover } from "../src/cover";
 import { buildOutline, chapters as outlineChapters } from "../src/outline/doc";
 import { ReaderCore } from "../src/reader-core";
 import { DEFAULT_SETTINGS, type ReaderSettings, type Theme } from "../src/settings";
@@ -189,7 +191,7 @@ async function cspProbe() {
 /** What the outline needs from the book: top-level chapters, where we are, where each chapter starts. */
 function chapters() {
 	const core = state.core!;
-	const ch = bookChapters(core, cardMeta(core.book.metadata, "").title);
+	const ch = bookChapters(core, bookData(core.book.metadata, "").title);
 	const map = chapterIndex(ch);
 	const fractions = core.view.getSectionFractions();
 	const item = core.progress?.tocItem;
@@ -206,4 +208,64 @@ function chapters() {
 	};
 }
 
-(window as unknown as { H: unknown }).H = { chapters, open, step, goTo, update, docInfo, pwned, clickInBook, submitForm, cspProbe, summary, settle };
+/** «Добавить книгу» reads a file without showing it: its data and its cover, made small. */
+async function bookFile(url: string, name: string) {
+	const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
+	const { data, cover } = await readBook(bytes, name);
+	const img = cover ? await prepareCover(cover) : null;
+	const bmp = img ? await createImageBitmap(new Blob([img.data])) : null;
+	return { data, cover: cover ? { type: cover.type, size: cover.size } : null, prepared: img && bmp ? { ext: img.ext, width: bmp.width, height: bmp.height } : null };
+}
+
+async function unreadable(name: string) {
+	try {
+		await readBook(new TextEncoder().encode("просто текст"), name);
+		return "read";
+	} catch (e) {
+		return e instanceof Error ? `${e.constructor.name}: ${e.message}` : String(e);
+	}
+}
+
+/** Covers of different kinds through the same path as a picture chosen in the form. */
+async function covers() {
+	const draw = async (w: number, h: number, type: string, alpha = false) => {
+		const c = document.createElement("canvas");
+		c.width = w;
+		c.height = h;
+		const ctx = c.getContext("2d")!;
+		if (!alpha) {
+			ctx.fillStyle = "#3a6";
+			ctx.fillRect(0, 0, w, h);
+		}
+		return new Promise<Blob>((r) => c.toBlob((b) => r(b!), type, 0.9));
+	};
+	const size = async (data: ArrayBuffer) => {
+		const b = await createImageBitmap(new Blob([data]));
+		return [b.width, b.height];
+	};
+	const big = await prepareCover(await draw(2000, 3000, "image/png"));
+	const smallJpeg = await draw(400, 600, "image/jpeg");
+	const small = await prepareCover(smallJpeg);
+	const clear = await prepareCover(await draw(300, 300, "image/png", true));
+	let clearPixel: number[] = [];
+	if (clear) {
+		const b = await createImageBitmap(new Blob([clear.data]));
+		const c = document.createElement("canvas");
+		c.width = b.width;
+		c.height = b.height;
+		const ctx = c.getContext("2d")!;
+		ctx.drawImage(b, 0, 0);
+		clearPixel = Array.from(ctx.getImageData(5, 5, 1, 1).data);
+	}
+	const svg = await prepareCover(new Blob([`<svg xmlns="http://www.w3.org/2000/svg" width="200" height="300"><rect width="200" height="300" fill="#a33"/></svg>`], { type: "image/svg+xml" }));
+	const junk = await prepareCover(new Blob(["не картинка"], { type: "text/plain" }));
+	return {
+		big: big && { ext: big.ext, size: await size(big.data) },
+		small: small && { ext: small.ext, same: small.data.byteLength === smallJpeg.size },
+		clearPixel,
+		svg: svg && { ext: svg.ext },
+		junk,
+	};
+}
+
+(window as unknown as { H: unknown }).H = { chapters, open, step, goTo, update, docInfo, pwned, clickInBook, submitForm, cspProbe, summary, settle, bookFile, unreadable, covers };

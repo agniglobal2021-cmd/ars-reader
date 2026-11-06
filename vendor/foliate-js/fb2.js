@@ -268,10 +268,15 @@ export const makeFB2 = async blob => {
         description: annotation ? converter.convert(annotation,
             { annotation: ['div', SECTION] }).innerHTML : null,
         subject: $$('title-info genre').map(getElementText),
+        // Ars Reader: the paper edition's year and ISBN
+        publishYear: getElementText($('publish-info year')),
+        isbn: getElementText($('publish-info isbn')),
     }
     if ($('coverpage image')) {
         const src = converter.getImageSrc($('coverpage image'))
-        book.getCover = () => fetch(src).then(res => res.blob())
+        // Ars Reader: only a picture inside the book, never a request to the network
+        book.getCover = () => src.startsWith('data:')
+            ? fetch(src).then(res => res.blob()) : null
     } else book.getCover = () => null
 
     // get convert each body

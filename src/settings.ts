@@ -31,8 +31,10 @@ export interface ReaderSettings {
 	cardsFolder: string;
 	/** Outlines: «Автор — Название (конспект)». */
 	outlinesFolder: string;
-	/** Template for new cards; empty: Templater's folder template, if it has one, else a plain note. */
-	cardTemplate: string;
+	/** Book files added with «Добавить книгу»: «Автор — Название.epub». */
+	booksFolder: string;
+	/** Covers: «Автор — Название (обложка).jpg». */
+	coversFolder: string;
 	/** Where the outline opens. */
 	outlinePlace: OutlinePlace;
 }
@@ -51,7 +53,8 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	tapZones: true,
 	cardsFolder: "03 Resources/Литература/Книги",
 	outlinesFolder: "03 Resources/Литература/Конспекты",
-	cardTemplate: "",
+	booksFolder: "06 Other/Books",
+	coversFolder: "06 Other/Archive/Files",
 	outlinePlace: "sidebar",
 };
 
@@ -68,6 +71,9 @@ export const SPREAD_MIN_WIDTH = 900;
 export const SAVE_EVERY_MS = 30_000;
 
 export function clampSettings(s: ReaderSettings): ReaderSettings {
+	// 0.2 had a card template; cards are Читальня's own now
+	const { cardTemplate: _gone, ...rest } = s as ReaderSettings & { cardTemplate?: unknown };
+	s = rest;
 	const clamp = (v: number, { min, max }: { min: number; max: number }, d: number) =>
 		Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : d;
 	const folder = (v: unknown, d: string) => (typeof v === "string" && cleanFolder(v)) || d;
@@ -78,7 +84,8 @@ export function clampSettings(s: ReaderSettings): ReaderSettings {
 		margin: clamp(s.margin, LIMITS.margin, DEFAULT_SETTINGS.margin),
 		cardsFolder: folder(s.cardsFolder, DEFAULT_SETTINGS.cardsFolder),
 		outlinesFolder: folder(s.outlinesFolder, DEFAULT_SETTINGS.outlinesFolder),
-		cardTemplate: typeof s.cardTemplate === "string" ? cleanFolder(s.cardTemplate) : "",
+		booksFolder: folder(s.booksFolder, DEFAULT_SETTINGS.booksFolder),
+		coversFolder: folder(s.coversFolder, DEFAULT_SETTINGS.coversFolder),
 		outlinePlace: s.outlinePlace === "beside" ? "beside" : "sidebar",
 	};
 }

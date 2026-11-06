@@ -11,6 +11,9 @@ Only the modules the reader uses are copied. Changes against upstream:
 - `view.js`: PDF is not opened here (Obsidian has its own PDF viewer), so PDF.js is not bundled.
 - `paginator.js`: `View.render()` returns when its frame is already detached. Closing a pane could
   otherwise let a last resize reach a frame without a document and throw.
+- `fb2.js`: the metadata also carries `publishYear` and `isbn` from `publish-info` (the paper
+  edition). The cover is taken only from a picture inside the book (`data:`), never fetched from
+  an address the book names.
 
 Scripts in books are blocked outside this folder, in `src/sanitize.ts`: every section passes
 through it before it is shown, whatever the format.
