@@ -1,0 +1,10 @@
+{
+	"id": "ars-reader",
+	"name": "Читальня",
+	"version": "0.1.0",
+	"minAppVersion": "1.5.7",
+	"description": "Читалка внутри Obsidian: EPUB, FB2, MOBI, AZW3 и CBZ. Место чтения хранится в карточке книги — обычной заметке.",
+	"author": "Senchous",
+	"authorUrl": "https://noeasy.xyz",
+	"isDesktopOnly": false
+}

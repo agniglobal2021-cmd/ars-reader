@@ -1,0 +1,7 @@
+node_modules/
+main.js
+data.json
+*.map
+.DS_Store
+test/out/
+test/books/

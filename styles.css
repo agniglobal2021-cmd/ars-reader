@@ -1,0 +1,161 @@
+/* Читальня. Облик задают переменные ниже: дизайн ложится поверх, код трогать не нужно.
+   Цвета тем и шрифты читаются отсюда и передаются в страницы книги. */
+body {
+	--ars-reader-light-bg: #fbfaf7;
+	--ars-reader-light-fg: #1d1c1a;
+	--ars-reader-light-link: #2f5c9e;
+	--ars-reader-sepia-bg: #f3ead6;
+	--ars-reader-sepia-fg: #4b3a28;
+	--ars-reader-sepia-link: #8a4d18;
+	--ars-reader-night-bg: #151514;
+	--ars-reader-night-fg: #d3ccbf;
+	--ars-reader-night-link: #8db2e3;
+	--ars-reader-font-serif: Georgia, "Times New Roman", serif;
+	--ars-reader-font-sans: -apple-system, system-ui, "Helvetica Neue", sans-serif;
+	--ars-reader-ui-font: var(--font-interface);
+	--ars-reader-status-size: var(--font-ui-smaller, 12px);
+	--ars-reader-touch: 44px;
+	--ars-reader-accent: var(--interactive-accent);
+}
+
+/* --ars-reader-page-bg/fg are set from the current theme by the view */
+.view-content.ars-reader {
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	background: var(--ars-reader-page-bg, var(--background-primary));
+}
+
+.ars-reader-stage {
+	position: relative;
+	flex: 1 1 auto;
+	min-height: 0;
+}
+
+.ars-reader-book {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+
+.ars-reader-footer {
+	flex: 0 0 auto;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 2px 16px calc(6px + env(safe-area-inset-bottom, 0px));
+	font-family: var(--ars-reader-ui-font);
+	font-size: var(--ars-reader-status-size);
+	color: color-mix(in srgb, var(--ars-reader-page-fg, var(--text-normal)) 55%, transparent);
+	background: var(--ars-reader-page-bg, var(--background-primary));
+}
+
+.ars-reader-slider {
+	width: 100%;
+	height: 22px;
+	margin: 0;
+	accent-color: var(--ars-reader-accent);
+	opacity: 0.7;
+}
+
+.ars-reader-status {
+	min-height: 1.4em;
+	text-align: center;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	font-variant-numeric: tabular-nums;
+}
+
+.ars-reader-message {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 24px;
+	text-align: center;
+	color: var(--text-muted);
+	background: var(--ars-reader-page-bg, var(--background-primary));
+}
+
+.ars-reader-message.is-error {
+	color: var(--text-error);
+}
+
+/* Тап в середине страницы: остаётся только текст */
+.ars-reader-immersive .view-header,
+.ars-reader-immersive .ars-reader-footer {
+	display: none;
+}
+
+body.ars-reader-immersive .mobile-navbar,
+body.ars-reader-immersive .mobile-toolbar {
+	display: none;
+}
+
+/* Оглавление */
+.ars-reader-toc {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.ars-reader-toc-item {
+	display: block;
+	width: 100%;
+	height: auto;
+	min-height: var(--ars-reader-touch);
+	padding: 8px 12px 8px calc(12px + var(--ars-reader-toc-depth, 0) * 18px);
+	border: none;
+	border-radius: var(--radius-s);
+	background: none;
+	box-shadow: none;
+	color: var(--text-normal);
+	font-size: var(--font-ui-medium);
+	text-align: start;
+	white-space: normal;
+	line-height: 1.35;
+}
+
+.ars-reader-toc-item:hover {
+	background: var(--background-modifier-hover);
+}
+
+.ars-reader-toc-item.is-current {
+	color: var(--text-accent);
+	font-weight: 600;
+	background: var(--background-modifier-hover);
+}
+
+/* Вид */
+.ars-reader-segmented {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	justify-content: flex-end;
+}
+
+.ars-reader-segmented button {
+	min-height: 36px;
+}
+
+.ars-reader-segmented button.is-active {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.ars-reader-value {
+	min-width: 3.5em;
+	text-align: center;
+	font-variant-numeric: tabular-nums;
+}
+
+.ars-reader-muted {
+	color: var(--text-muted);
+}
+
+.ars-reader-modal .setting-item-control button {
+	min-height: 36px;
+}

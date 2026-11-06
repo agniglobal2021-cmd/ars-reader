@@ -1,0 +1,53 @@
+# Кнопка «Run workflow» во вкладке Actions. Собирает плагин из исходников,
+# проверяет его и выпускает релиз с версией из manifest.json
+# и файлами main.js, manifest.json, styles.css.
+name: Выпустить релиз
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Сверить номера версий
+        run: |
+          node -e '
+            const m = require("./manifest.json"), p = require("./package.json"), v = require("./versions.json");
+            if (p.version !== m.version) throw new Error(`package.json ${p.version}, manifest.json ${m.version}`);
+            if (v[m.version] !== m.minAppVersion) throw new Error(`versions.json: нет ${m.version}: ${m.minAppVersion}`);
+          '
+
+      - name: Установить зависимости
+        run: npm ci
+
+      - name: Проверить
+        run: npm test
+
+      - name: Собрать
+        run: npm run build
+
+      - name: Выпустить релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(node -p 'require("./manifest.json").version')
+          if gh release view "$version" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "::error::Релиз $version уже есть. Подними версию в manifest.json, package.json и versions.json."
+            exit 1
+          fi
+          awk -v head="## $version" '$0 == head { on = 1; next } /^## / { on = 0 } on' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "Версия $version." > notes.md
+          gh release create "$version" main.js manifest.json styles.css \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$version" --notes-file notes.md
