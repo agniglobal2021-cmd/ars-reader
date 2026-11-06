@@ -5,7 +5,7 @@ import { readLook, resolveTheme } from "./book-css";
 import { cardMeta, formatOf, type CardMeta } from "./book-meta";
 import { STATUS, type Position } from "./card";
 import { pickCard } from "./card-picker";
-import { chapterIndex, chapterOf, topChapters, type Chapter } from "./chapters";
+import { bookChapters, chapterIndex, chapterOf, type Chapter } from "./chapters";
 import { partialMd5 } from "./fingerprint";
 import type ReaderPlugin from "./main";
 import { cardName } from "./names";
@@ -174,10 +174,10 @@ export class ReaderView extends FileView {
 			}
 			this.core = core;
 			this.stageEl.querySelector(".ars-reader-message")?.remove();
-			this.chapters = topChapters(core.book.toc);
+			const meta = cardMeta(core.book.metadata, file.basename);
+			this.chapters = bookChapters(core, meta.title);
 			this.chapterMap = chapterIndex(this.chapters);
 			this.chapter = chapterOf(this.chapterMap, core.progress?.tocItem);
-			const meta = cardMeta(core.book.metadata, file.basename);
 			this.title = meta.title;
 			(this.leaf as unknown as { updateHeader?: () => void }).updateHeader?.();
 			// The book is open by now: a card that cannot be written must not take the book away

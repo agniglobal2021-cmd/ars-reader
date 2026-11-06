@@ -1,4 +1,4 @@
-import type { TOCItem } from "../vendor/foliate-js/view.js";
+import type { Book, TOCItem } from "../vendor/foliate-js/view.js";
 
 /** A top-level chapter of the book: it gets a heading in the outline. Subchapters belong to it. */
 export interface Chapter {
@@ -14,13 +14,44 @@ export function cleanLabel(s: string | undefined): string {
 	return (s ?? "").replace(/\s+/g, " ").trim();
 }
 
-export function topChapters(toc: TOCItem[] | undefined): Chapter[] {
+const same = (a: string, b: string) => a.toLowerCase().replace(/ё/g, "е") === b.toLowerCase().replace(/ё/g, "е");
+
+export interface ChapterFilter {
+	/** The book's title: an entry with exactly this name is the title page. */
+	title?: string;
+	/** Entries outside the main text (footnotes, notes in FB2, non-linear EPUB pages). */
+	skip?(item: TOCItem): boolean;
+}
+
+export function topChapters(toc: TOCItem[] | undefined, filter: ChapterFilter = {}): Chapter[] {
 	let roots = toc ?? [];
 	// The whole table of contents hangs off one entry, usually the title: its children are the chapters
 	while (roots.length === 1 && roots[0].subitems?.length) roots = roots[0].subitems;
+	const title = cleanLabel(filter.title);
 	return roots
 		.map((item) => ({ label: cleanLabel(item.label), href: item.href, item }))
-		.filter((c) => c.label && !SKIP.test(c.label.replace(/[.:]$/, "")));
+		.filter((c) => c.label && !SKIP.test(c.label.replace(/[.:]$/, "")))
+		.filter((c) => !(title && same(c.label, title)) && !filter.skip?.(c.item));
+}
+
+interface Navigator {
+	book: Book;
+	view: { resolveNavigation(target: string): { index: number } | undefined };
+}
+
+/** The chapters of an open book: what the outline gets headings for. */
+export function bookChapters(core: Navigator, title: string): Chapter[] {
+	return topChapters(core.book.toc, {
+		title,
+		skip: (item) => {
+			try {
+				const r = item.href ? core.view.resolveNavigation(item.href) : undefined;
+				return !!r && core.book.sections[r.index]?.linear === "no";
+			} catch {
+				return false;
+			}
+		},
+	});
 }
 
 /** Every TOC entry, subchapters too, to the index of the top-level chapter it belongs to. */

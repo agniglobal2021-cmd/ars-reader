@@ -214,7 +214,7 @@ const shot = (p, name) => p.screenshot({ path: join(out, `${name}.png`) });
 	let s = await H(p, "open", FB2, "Записки на полях.fb2");
 	check("fb2: title", s.title === "Записки на полях", String(s.title));
 	const fc = await H(p, "chapters");
-	check("fb2: chapters for the outline", fc.labels.includes("Часть первая") && fc.labels.includes("Часть вторая") && !fc.labels.includes("Глава 2.1"), JSON.stringify(fc.labels));
+	check("fb2: chapters for the outline, no title page, no notes", JSON.stringify(fc.labels) === JSON.stringify(["Часть первая", "Часть вторая"]), JSON.stringify(fc.labels));
 
 	check("fb2: author", JSON.stringify(s.author).includes("Анна") && JSON.stringify(s.author).includes("Полевая"), JSON.stringify(s.author));
 	check("fb2: toc", s.toc.some((t) => t.includes("Часть первая")) && s.toc.some((t) => t.includes("Глава 2.1")), s.toc.join("|"));

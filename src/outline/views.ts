@@ -9,6 +9,8 @@ const CLS = "ars-outline-view";
  */
 export class OutlineViews {
 	private readonly actions = new Map<MarkdownView, HTMLElement>();
+	/** An outline coming on screen (the side panel swiped open) catches up with its book. */
+	private readonly watchers = new Map<MarkdownView, ResizeObserver>();
 
 	constructor(private readonly plugin: ReaderPlugin) {}
 
@@ -31,6 +33,7 @@ export class OutlineViews {
 			seen.add(view);
 			const outline = !!view.file && this.plugin.cards.isOutline(view.file);
 			view.containerEl.toggleClass(CLS, outline);
+			this.watch(view, outline);
 			const el = this.actions.get(view);
 			if (outline && !el) {
 				// Not «book-open»: that is Obsidian's own reading-mode button right next to it
@@ -47,9 +50,30 @@ export class OutlineViews {
 			el.remove();
 			this.actions.delete(view);
 		}
+		for (const view of [...this.watchers.keys()]) if (!seen.has(view)) this.watch(view, false);
+	}
+
+	private watch(view: MarkdownView, on: boolean): void {
+		const ro = this.watchers.get(view);
+		if (on && !ro) {
+			let shown = false;
+			const watcher = new ResizeObserver((entries) => {
+				const box = entries[entries.length - 1]?.contentRect;
+				const now = !!box && box.width > 0 && box.height > 0;
+				if (now && !shown) this.plugin.followAll();
+				shown = now;
+			});
+			watcher.observe(view.containerEl);
+			this.watchers.set(view, watcher);
+		} else if (!on && ro) {
+			ro.disconnect();
+			this.watchers.delete(view);
+		}
 	}
 
 	stop(): void {
+		for (const ro of this.watchers.values()) ro.disconnect();
+		this.watchers.clear();
 		for (const [view, el] of this.actions) {
 			el.remove();
 			view.containerEl.removeClass(CLS);

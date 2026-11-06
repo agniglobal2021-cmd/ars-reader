@@ -1,7 +1,8 @@
 // Browser test page: drives the same ReaderCore the plugin uses, without Obsidian.
 import type { Progress } from "../vendor/foliate-js/view.js";
 import { readLook } from "../src/book-css";
-import { chapterIndex, chapterOf, topChapters } from "../src/chapters";
+import { bookChapters, chapterIndex, chapterOf } from "../src/chapters";
+import { cardMeta } from "../src/book-meta";
 import { buildOutline, chapters as outlineChapters } from "../src/outline/doc";
 import { ReaderCore } from "../src/reader-core";
 import { DEFAULT_SETTINGS, type ReaderSettings, type Theme } from "../src/settings";
@@ -188,7 +189,7 @@ async function cspProbe() {
 /** What the outline needs from the book: top-level chapters, where we are, where each chapter starts. */
 function chapters() {
 	const core = state.core!;
-	const ch = topChapters(core.book.toc);
+	const ch = bookChapters(core, cardMeta(core.book.metadata, "").title);
 	const map = chapterIndex(ch);
 	const fractions = core.view.getSectionFractions();
 	const item = core.progress?.tocItem;

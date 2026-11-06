@@ -4,6 +4,8 @@ export type Theme = "auto" | "light" | "sepia" | "night";
 export type FontChoice = "book" | "serif" | "sans";
 export type Flow = "paginated" | "scrolled";
 export type Spread = "auto" | "single";
+/** «sidebar»: the right side panel (swipe from the right edge on iPad and iPhone). «beside»: a pane next to the book. */
+export type OutlinePlace = "sidebar" | "beside";
 
 /**
  * How books look on this device and where book notes go. Kept in the plugin's data, not in notes:
@@ -31,6 +33,8 @@ export interface ReaderSettings {
 	outlinesFolder: string;
 	/** Template for new cards; empty: Templater's folder template, if it has one, else a plain note. */
 	cardTemplate: string;
+	/** Where the outline opens. */
+	outlinePlace: OutlinePlace;
 }
 
 export const DEFAULT_SETTINGS: ReaderSettings = {
@@ -48,6 +52,7 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	cardsFolder: "03 Resources/Литература/Книги",
 	outlinesFolder: "03 Resources/Литература/Конспекты",
 	cardTemplate: "",
+	outlinePlace: "sidebar",
 };
 
 export const LIMITS = {
@@ -74,5 +79,6 @@ export function clampSettings(s: ReaderSettings): ReaderSettings {
 		cardsFolder: folder(s.cardsFolder, DEFAULT_SETTINGS.cardsFolder),
 		outlinesFolder: folder(s.outlinesFolder, DEFAULT_SETTINGS.outlinesFolder),
 		cardTemplate: typeof s.cardTemplate === "string" ? cleanFolder(s.cardTemplate) : "",
+		outlinePlace: s.outlinePlace === "beside" ? "beside" : "sidebar",
 	};
 }

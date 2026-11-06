@@ -1,7 +1,7 @@
 {
 	"id": "ars-reader",
 	"name": "Читальня",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"minAppVersion": "1.5.7",
 	"description": "Читалка внутри Obsidian: EPUB, FB2, MOBI, AZW3 и CBZ, скелет-конспект по главам рядом с книгой. Место чтения хранится в карточке книги — обычной заметке.",
 	"author": "Senchous",

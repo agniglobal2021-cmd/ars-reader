@@ -162,6 +162,8 @@ function op(text: string, o: Op, style = TAB): string | null {
 	check("entry found by href when it is another object", chapterOf(idx, { label: "x", href: "c2.xhtml" }) === 1);
 	check("unknown entry", chapterOf(idx, item("Обложка", "cover.xhtml")) === null && chapterOf(idx, undefined) === null);
 	same("no TOC", topChapters(undefined), []);
+	const fb2 = [item("Записки на полях", "0"), item("Часть первая", "1"), item("Часть вторая", "2"), item("1", "3")];
+	same("title page and notes are no chapters", topChapters(fb2, { title: "Записки на полях", skip: (i) => i.href === "3" }).map((c) => c.label), ["Часть первая", "Часть вторая"]);
 }
 
 // ── names ──

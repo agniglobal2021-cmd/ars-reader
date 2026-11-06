@@ -51,6 +51,8 @@ export default class ReaderPlugin extends Plugin {
 		// A hidden outline catches up with its book when it comes on screen
 		this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.onLeafChange()));
 		this.registerEvent(this.app.workspace.on("layout-change", () => this.followAll()));
+		// The side panel opening (a swipe) resizes the workspace
+		this.registerEvent(this.app.workspace.on("resize", () => this.followAll()));
 
 		this.outlineViews = new OutlineViews(this);
 		this.outlineViews.start();
@@ -120,7 +122,8 @@ export default class ReaderPlugin extends Plugin {
 		this.followAll();
 	}
 
-	private followAll(): void {
+	/** Every open book whose outline is waiting scrolls it to the chapter being read. */
+	followAll(): void {
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
 			if (leaf.view instanceof ReaderView) leaf.view.followOutline();
 		}
@@ -180,6 +183,14 @@ class ReaderSettingTab extends PluginSettingTab {
 				.onChange(async (v) => this.plugin.updateSettings({ [key]: cleanFolder(v) || DEFAULT_SETTINGS[key] })));
 		folder("Папка карточек", "Карточка книги: «Автор — Название».", "cardsFolder");
 		folder("Папка конспектов", "Конспект книги: «Автор — Название (конспект)», заголовок на каждую главу.", "outlinesFolder");
+		new Setting(el)
+			.setName("Где открывать конспект")
+			.setDesc("В правой панели книга остаётся на месте, панель выдвигается свайпом от правого края; на iPad её можно закрепить булавкой. Рядом с книгой — отдельная панель на широком экране и вкладка на узком.")
+			.addDropdown((d) => d
+				.addOption("sidebar", "В правой панели")
+				.addOption("beside", "Рядом с книгой")
+				.setValue(this.plugin.settings.outlinePlace)
+				.onChange(async (v) => this.plugin.updateSettings({ outlinePlace: v === "beside" ? "beside" : "sidebar" })));
 		new Setting(el)
 			.setName("Шаблон карточки")
 			.setDesc("Путь к шаблону новой карточки. Пусто — шаблон папки из Templater, если он задан, иначе простая карточка.")

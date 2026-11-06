@@ -93,10 +93,12 @@ export class Outlines {
 	}
 
 	/**
-	 * Shows the outline: beside the book on a wide screen (the book stays active), in a tab on a
-	 * narrow one. A note already open somewhere is brought forward instead of opened twice.
+	 * Shows the outline. By default in the right side panel: the book stays where it is underneath,
+	 * so switching costs nothing (on iPad the panel can be pinned to see both). With «рядом с книгой»:
+	 * a pane beside the book on a wide screen, a tab on a narrow one.
 	 */
 	async show(file: TFile, from: WorkspaceLeaf): Promise<MarkdownView | null> {
+		if (this.plugin.settings.outlinePlace === "sidebar") return this.showInSidebar(file);
 		const shown = this.visibleView(file);
 		if (shown) return shown;
 		const wide = isWide();
@@ -109,6 +111,36 @@ export class Outlines {
 			leaf = wide ? this.app.workspace.createLeafBySplit(from, "vertical") : this.app.workspace.getLeaf("tab");
 			await leaf.openFile(file, { active: !wide });
 		}
+		await nextFrame();
+		return leaf.view instanceof MarkdownView ? leaf.view : null;
+	}
+
+	private inSidebar(leaf: WorkspaceLeaf): boolean {
+		return leaf.getRoot() === this.app.workspace.rightSplit;
+	}
+
+	/** The side-panel tab that already holds some book's outline: one tab serves every book. */
+	private sidebarOutlineLeaf(): WorkspaceLeaf | null {
+		let found: WorkspaceLeaf | null = null;
+		this.app.workspace.iterateAllLeaves((leaf) => {
+			if (found || !this.inSidebar(leaf)) return;
+			const st = leaf.getViewState();
+			const path = (st.state as { file?: string } | undefined)?.file;
+			const f = st.type === "markdown" && path ? this.app.vault.getFileByPath(path) : null;
+			if (f && this.plugin.cards.isOutline(f)) found = leaf;
+		});
+		return found;
+	}
+
+	private async showInSidebar(file: TFile): Promise<MarkdownView | null> {
+		const ws = this.app.workspace;
+		let leaf: WorkspaceLeaf | null = this.leavesOf(file).find((l) => this.inSidebar(l)) ?? null;
+		if (!leaf) {
+			leaf = this.sidebarOutlineLeaf() ?? ws.getRightLeaf(false);
+			if (!leaf) return null;
+			await leaf.setViewState({ type: "markdown", state: { file: file.path, mode: "source" }, active: false });
+		}
+		await ws.revealLeaf(leaf);
 		await nextFrame();
 		return leaf.view instanceof MarkdownView ? leaf.view : null;
 	}
