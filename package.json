@@ -1,6 +1,6 @@
 {
 	"name": "ars-reader",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Читальня: book reader for Obsidian (EPUB, FB2, MOBI, AZW3, CBZ).",
 	"private": true,
 	"license": "MIT",

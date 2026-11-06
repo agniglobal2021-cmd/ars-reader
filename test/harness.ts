@@ -1,6 +1,8 @@
 // Browser test page: drives the same ReaderCore the plugin uses, without Obsidian.
 import type { Progress } from "../vendor/foliate-js/view.js";
 import { readLook } from "../src/book-css";
+import { chapterIndex, chapterOf, topChapters } from "../src/chapters";
+import { buildOutline, chapters as outlineChapters } from "../src/outline/doc";
 import { ReaderCore } from "../src/reader-core";
 import { DEFAULT_SETTINGS, type ReaderSettings, type Theme } from "../src/settings";
 
@@ -133,6 +135,9 @@ function docInfo() {
 		fontSize: css.fontSize,
 		lineHeight: p ? getComputedStyle(p).lineHeight : "",
 		textAlign: p ? getComputedStyle(p).textAlign : "",
+		textIndent: p ? getComputedStyle(p).textIndent : "",
+		inlineStyles: d.querySelectorAll("style").length,
+		linkedStyles: d.querySelectorAll("link[rel~=stylesheet]").length,
 		scripts: d.querySelectorAll("script").length,
 		handlers: Array.from(d.querySelectorAll("*")).filter((el) => Array.from(el.attributes).some((a) => a.name.startsWith("on"))).length,
 		csp: d.querySelector('meta[http-equiv="Content-Security-Policy"]')?.getAttribute("content") ?? null,
@@ -180,4 +185,24 @@ async function cspProbe() {
 	return { withPolicyRan: await make(true, "__probe_csp"), withoutPolicyRan: await make(false, "__probe_plain") };
 }
 
-(window as unknown as { H: unknown }).H = { open, step, goTo, update, docInfo, pwned, clickInBook, submitForm, cspProbe, summary, settle };
+/** What the outline needs from the book: top-level chapters, where we are, where each chapter starts. */
+function chapters() {
+	const core = state.core!;
+	const ch = topChapters(core.book.toc);
+	const map = chapterIndex(ch);
+	const fractions = core.view.getSectionFractions();
+	const item = core.progress?.tocItem;
+	const labels = ch.map((c) => c.label);
+	return {
+		labels,
+		current: chapterOf(map, item),
+		sameObject: item ? map.has(item) : null,
+		starts: ch.map((c) => {
+			const r = core.view.resolveNavigation(c.href);
+			return r && typeof r.index === "number" ? fractions[r.index] ?? null : null;
+		}),
+		headingsFound: outlineChapters(buildOutline(labels), labels).at.every((x) => x !== null),
+	};
+}
+
+(window as unknown as { H: unknown }).H = { chapters, open, step, goTo, update, docInfo, pwned, clickInBook, submitForm, cspProbe, summary, settle };

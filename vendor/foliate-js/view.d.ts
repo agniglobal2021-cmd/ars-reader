@@ -4,6 +4,8 @@ export interface TOCItem {
 	label: string;
 	href: string;
 	subitems?: TOCItem[];
+	/** Assigned by the view in reading order when the book opens. */
+	id?: number;
 }
 
 export interface Section {
@@ -83,6 +85,8 @@ export class View extends HTMLElement {
 	goLeft(): Promise<void>;
 	goRight(): Promise<void>;
 	getSectionFractions(): number[];
+	/** Section index (and anchor) of an href, a CFI or a section number. */
+	resolveNavigation(target: string | number): { index: number; anchor?: unknown } | undefined;
 }
 
 export class ResponseError extends Error {}

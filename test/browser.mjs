@@ -30,7 +30,9 @@ await esbuild.build({
 copyFileSync(join(root, "styles.css"), join(site, "styles.css"));
 cpSync(join(root, "test/books"), join(site, "books"), { recursive: true });
 writeFileSync(join(site, "index.html"), `<!doctype html><html lang="ru"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="styles.css">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="style-src 'unsafe-inline' 'self' https://fonts.googleapis.com">
+<link rel="stylesheet" href="styles.css">
 <style>html,body{margin:0;height:100%;background:#fff}#host{position:fixed;inset:0}</style></head>
 <body><div id="host" tabindex="0"></div><script src="harness.js"></script></body></html>`);
 
@@ -109,6 +111,19 @@ const shot = (p, name) => p.screenshot({ path: join(out, `${name}.png`) });
 	s = await H(p, "goTo", "Часть Б");
 	check("epub: jump to a part inside a chapter", s.last?.label === "Часть Б", JSON.stringify(s.last));
 
+	// Chapters for the outline: top level only, subchapters belong to their chapter
+	let c = await H(p, "chapters");
+	check("outline: top-level chapters, cover skipped", JSON.stringify(c.labels) === JSON.stringify(["Глава 1", "Глава 2", "Глава 3", "Глава 4", "Глава 5", "Глава с ловушками"]), JSON.stringify(c.labels));
+	check("outline: a part inside chapter 2 counts as chapter 2", c.current === 1 && c.sameObject === true, JSON.stringify(c));
+	check("outline: chapter starts go forward", c.starts.every((x, i) => typeof x === "number" && (i === 0 || x > c.starts[i - 1])), JSON.stringify(c.starts));
+	check("outline: every chapter finds its heading", c.headingsFound === true);
+	await H(p, "goTo", "Глава 3");
+	c = await H(p, "chapters");
+	check("outline: chapter 3 is index 2", c.current === 2, JSON.stringify(c));
+	await H(p, "open", EPUB, "Светлый град.epub");
+	c = await H(p, "chapters");
+	check("outline: the cover is no chapter", c.current === null, JSON.stringify(c));
+
 	s = await H(p, "goTo", "Глава с ловушками");
 	await H(p, "settle", 800);
 	const info = await H(p, "docInfo");
@@ -161,6 +176,7 @@ const shot = (p, name) => p.screenshot({ path: join(out, `${name}.png`) });
 	check("sepia: text colour", info.color === "rgb(75, 58, 40)", info.color);
 	check("font size 115%", info.fontSize === "18.4px", info.fontSize);
 	check("justified text", info.textAlign === "justify", info.textAlign);
+	check("book stylesheet applies under Obsidian's style policy", info.textIndent === "27.6px" && info.linkedStyles === 0 && info.inlineStyles > 0, JSON.stringify(info));
 	await shot(p, "4-ipad-portrait-sepia");
 	await p.context().close();
 }
@@ -197,6 +213,9 @@ const shot = (p, name) => p.screenshot({ path: join(out, `${name}.png`) });
 	const p = await page({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2 }, "formats");
 	let s = await H(p, "open", FB2, "Записки на полях.fb2");
 	check("fb2: title", s.title === "Записки на полях", String(s.title));
+	const fc = await H(p, "chapters");
+	check("fb2: chapters for the outline", fc.labels.includes("Часть первая") && fc.labels.includes("Часть вторая") && !fc.labels.includes("Глава 2.1"), JSON.stringify(fc.labels));
+
 	check("fb2: author", JSON.stringify(s.author).includes("Анна") && JSON.stringify(s.author).includes("Полевая"), JSON.stringify(s.author));
 	check("fb2: toc", s.toc.some((t) => t.includes("Часть первая")) && s.toc.some((t) => t.includes("Глава 2.1")), s.toc.join("|"));
 	s = await H(p, "step", "next", 2);

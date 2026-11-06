@@ -64,8 +64,44 @@ function addPolicy(doc: Document): void {
 	head.insertBefore(meta, head.firstChild);
 }
 
-/** Cleans one section's markup. Broken XHTML is read as HTML, the way foliate-js treats KF8. */
-export function sanitizeMarkup(text: string, type: string): { text: string; type: string } {
+const IMPORT = /@import\s+(?:url\(\s*)?(["']?)(blob:[^"')\s]+)\1\s*\)?\s*([^;]*);/gi;
+
+/** A stylesheet's text with its `@import`s of other book files put in place. */
+async function cssText(url: string, depth = 0): Promise<string> {
+	let css = await (await fetch(url)).text();
+	if (depth >= 3) return css;
+	for (const m of Array.from(css.matchAll(IMPORT))) {
+		const inner = await cssText(m[2], depth + 1).catch(() => "");
+		const media = m[3].trim();
+		css = css.replace(m[0], media && !/\(/.test(media) ? `@media ${media} {\n${inner}\n}` : inner);
+	}
+	return css;
+}
+
+/**
+ * Obsidian 1.15 lets styles into its window (and so into the book's frames) only inline: the
+ * book's own stylesheets would be blocked as files. They go into <style> elements instead.
+ */
+export async function inlineStylesheets(doc: Document): Promise<void> {
+	for (const link of Array.from(doc.querySelectorAll("link"))) {
+		const rel = (link.getAttribute("rel") ?? "").toLowerCase().split(/\s+/);
+		const href = link.getAttribute("href") ?? "";
+		if (!rel.includes("stylesheet") || rel.includes("alternate") || !href.startsWith("blob:")) continue;
+		let css: string;
+		try {
+			css = await cssText(href);
+		} catch {
+			continue;
+		}
+		const style = doc.createElementNS(link.namespaceURI ?? XHTML_NS, "style");
+		const media = link.getAttribute("media");
+		if (media) style.setAttribute("media", media);
+		style.textContent = css.replace(/<\/style/gi, "<\\/style");
+		link.replaceWith(style);
+	}
+}
+
+function parseMarkup(text: string, type: string): { doc: Document; mime: DOMParserSupportedType } {
 	const parser = new DOMParser();
 	let mime = type.split(";")[0].trim().toLowerCase() as DOMParserSupportedType;
 	let doc = parser.parseFromString(text, mime);
@@ -73,12 +109,29 @@ export function sanitizeMarkup(text: string, type: string): { text: string; type
 		mime = "text/html";
 		doc = parser.parseFromString(text, mime);
 	}
+	return { doc, mime };
+}
+
+function serialize(doc: Document, mime: DOMParserSupportedType): { text: string; type: string } {
+	if (mime === "text/html") return { text: `<!DOCTYPE html>\n${doc.documentElement.outerHTML}`, type: mime };
+	return { text: new XMLSerializer().serializeToString(doc), type: mime };
+}
+
+/** Cleans one section's markup. Broken XHTML is read as HTML, the way foliate-js treats KF8. */
+export function sanitizeMarkup(text: string, type: string): { text: string; type: string } {
+	const { doc, mime } = parseMarkup(text, type);
 	sanitizeDocument(doc);
 	addPolicy(doc);
-	if (mime === "text/html") {
-		return { text: `<!DOCTYPE html>\n${doc.documentElement.outerHTML}`, type: mime };
-	}
-	return { text: new XMLSerializer().serializeToString(doc), type: mime };
+	return serialize(doc, mime);
+}
+
+/** The same, with the book's stylesheets inlined: what the reader actually shows. */
+export async function prepareMarkup(text: string, type: string): Promise<{ text: string; type: string }> {
+	const { doc, mime } = parseMarkup(text, type);
+	sanitizeDocument(doc);
+	await inlineStylesheets(doc);
+	addPolicy(doc);
+	return serialize(doc, mime);
 }
 
 /** Wraps every section's load() so that what reaches the iframe is the cleaned copy. */
@@ -94,7 +147,7 @@ export function secureBook(book: Book): void {
 			if (url === original && safe) return safe;
 			const blob = await (await fetch(url)).blob();
 			if (!isMarkup(blob.type)) return url;
-			const clean = sanitizeMarkup(await blob.text(), blob.type);
+			const clean = await prepareMarkup(await blob.text(), blob.type);
 			if (safe) URL.revokeObjectURL(safe);
 			original = url;
 			safe = URL.createObjectURL(new Blob([clean.text], { type: clean.type }));

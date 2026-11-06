@@ -1,9 +1,14 @@
+import { cleanFolder } from "./names";
+
 export type Theme = "auto" | "light" | "sepia" | "night";
 export type FontChoice = "book" | "serif" | "sans";
 export type Flow = "paginated" | "scrolled";
 export type Spread = "auto" | "single";
 
-/** How books look on this device. Kept in the plugin's data, not in notes: iPad and iPhone may differ. */
+/**
+ * How books look on this device and where book notes go. Kept in the plugin's data, not in notes:
+ * iPad and iPhone may differ in look.
+ */
 export interface ReaderSettings {
 	theme: Theme;
 	/** Percent of the book's own size. */
@@ -20,6 +25,12 @@ export interface ReaderSettings {
 	animated: boolean;
 	/** Tap the left or right edge to turn the page, the middle to hide the bars. */
 	tapZones: boolean;
+	/** Book cards: «Автор — Название». */
+	cardsFolder: string;
+	/** Outlines: «Автор — Название (конспект)». */
+	outlinesFolder: string;
+	/** Template for new cards; empty: Templater's folder template, if it has one, else a plain note. */
+	cardTemplate: string;
 }
 
 export const DEFAULT_SETTINGS: ReaderSettings = {
@@ -34,6 +45,9 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	spread: "auto",
 	animated: true,
 	tapZones: true,
+	cardsFolder: "03 Resources/Литература/Книги",
+	outlinesFolder: "03 Resources/Литература/Конспекты",
+	cardTemplate: "",
 };
 
 export const LIMITS = {
@@ -51,10 +65,14 @@ export const SAVE_EVERY_MS = 30_000;
 export function clampSettings(s: ReaderSettings): ReaderSettings {
 	const clamp = (v: number, { min, max }: { min: number; max: number }, d: number) =>
 		Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : d;
+	const folder = (v: unknown, d: string) => (typeof v === "string" && cleanFolder(v)) || d;
 	return {
 		...s,
 		fontSize: clamp(s.fontSize, LIMITS.fontSize, DEFAULT_SETTINGS.fontSize),
 		lineHeight: Math.round(clamp(s.lineHeight, LIMITS.lineHeight, DEFAULT_SETTINGS.lineHeight) * 10) / 10,
 		margin: clamp(s.margin, LIMITS.margin, DEFAULT_SETTINGS.margin),
+		cardsFolder: folder(s.cardsFolder, DEFAULT_SETTINGS.cardsFolder),
+		outlinesFolder: folder(s.outlinesFolder, DEFAULT_SETTINGS.outlinesFolder),
+		cardTemplate: typeof s.cardTemplate === "string" ? cleanFolder(s.cardTemplate) : "",
 	};
 }

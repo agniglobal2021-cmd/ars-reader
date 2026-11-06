@@ -9,6 +9,8 @@ Only the modules the reader uses are copied. Changes against upstream:
   restarting Obsidian, and turning the plugin off and on again does not throw.
 - `view.js`, `paginator.js`, `fixed-layout.js`: use `TAG` and `define()` from `tags.js`.
 - `view.js`: PDF is not opened here (Obsidian has its own PDF viewer), so PDF.js is not bundled.
+- `paginator.js`: `View.render()` returns when its frame is already detached. Closing a pane could
+  otherwise let a last resize reach a frame without a document and throw.
 
 Scripts in books are blocked outside this folder, in `src/sanitize.ts`: every section passes
 through it before it is shown, whatever the format.

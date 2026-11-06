@@ -284,7 +284,8 @@ class View {
         })
     }
     render(layout) {
-        if (!layout) return
+        // ars-reader: the frame may already be detached (pane closed) when a resize arrives
+        if (!layout || !this.document) return
         this.#column = layout.flow !== 'scrolled'
         this.#layout = layout
         if (this.#column) this.columnize(layout)

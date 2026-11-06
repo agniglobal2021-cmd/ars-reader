@@ -20,7 +20,7 @@ body {
 
 /* --ars-reader-page-bg/fg are set from the current theme by the view */
 .view-content.ars-reader {
-	padding: 0;
+	padding: 0 0 var(--ars-reader-bottom-inset, 0px);
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;
@@ -51,7 +51,13 @@ body {
 	background: var(--ars-reader-page-bg, var(--background-primary));
 }
 
-.ars-reader-slider {
+/* Над плавающей панелью Obsidian безопасная зона iPhone уже позади */
+.view-content.ars-reader.has-bottom-inset .ars-reader-footer {
+	padding-bottom: 6px;
+}
+
+/* Сильнее, чем input[type="range"] у Obsidian: там ширина 100px */
+.ars-reader-footer input[type="range"].ars-reader-slider {
 	width: 100%;
 	height: 22px;
 	margin: 0;
@@ -90,9 +96,40 @@ body {
 	display: none;
 }
 
-body.ars-reader-immersive .mobile-navbar,
-body.ars-reader-immersive .mobile-toolbar {
+body.ars-reader-immersive .mobile-navbar {
 	display: none;
+}
+
+/* Подсказка «Скелет главы →»: глава позади, а скелета у неё нет */
+.ars-reader-hint {
+	position: absolute;
+	left: 50%;
+	bottom: 16px;
+	z-index: 5;
+	transform: translateX(-50%);
+	min-height: var(--ars-reader-touch);
+	padding: 0 20px;
+	border: none;
+	border-radius: 999px;
+	background: var(--ars-reader-accent);
+	color: var(--text-on-accent);
+	font-family: var(--ars-reader-ui-font);
+	font-size: var(--font-ui-small);
+	box-shadow: var(--shadow-s);
+	animation: ars-reader-hint-in 180ms ease-out;
+}
+
+@keyframes ars-reader-hint-in {
+	from {
+		opacity: 0;
+		transform: translate(-50%, 8px);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.ars-reader-hint {
+		animation: none;
+	}
 }
 
 /* Оглавление */
@@ -103,7 +140,9 @@ body.ars-reader-immersive .mobile-toolbar {
 }
 
 .ars-reader-toc-item {
-	display: block;
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
 	width: 100%;
 	height: auto;
 	min-height: var(--ars-reader-touch);
@@ -127,6 +166,31 @@ body.ars-reader-immersive .mobile-toolbar {
 	color: var(--text-accent);
 	font-weight: 600;
 	background: var(--background-modifier-hover);
+}
+
+.ars-reader-toc-label {
+	flex: 1 1 auto;
+}
+
+.ars-reader-toc-item.is-passed:not(.is-current) .ars-reader-toc-label {
+	color: var(--text-muted);
+}
+
+.ars-reader-toc-check {
+	flex: 0 0 auto;
+	color: var(--text-faint);
+	font-weight: normal;
+}
+
+.ars-reader-toc-mark {
+	flex: 0 0 auto;
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+	font-weight: normal;
+}
+
+.ars-reader-toc-mark.is-missing {
+	color: var(--text-accent);
 }
 
 /* Вид */
@@ -158,4 +222,77 @@ body.ars-reader-immersive .mobile-toolbar {
 
 .ars-reader-modal .setting-item-control button {
 	min-height: 36px;
+}
+
+/* «+»: мысль в конспект */
+.ars-reader-thought {
+	display: block;
+	width: 100%;
+	min-height: 5.5em;
+	resize: vertical;
+	/* 16px и больше: iOS не увеличивает страницу при фокусе */
+	font-size: max(16px, var(--font-text-size, 16px));
+	line-height: 1.4;
+}
+
+.ars-reader-thought-actions {
+	display: flex;
+	justify-content: flex-end;
+	margin-top: 12px;
+}
+
+.ars-reader-thought-actions button {
+	min-height: var(--ars-reader-touch);
+	padding: 0 20px;
+}
+
+/* Выбор заметки книги при первом открытии */
+.ars-reader-picker-head {
+	padding: 14px 16px 8px;
+}
+
+.ars-reader-picker-title {
+	margin-bottom: 4px;
+	font-weight: 600;
+}
+
+.ars-reader-picker .suggestion-item {
+	min-height: var(--ars-reader-touch);
+}
+
+.ars-reader-picker-new {
+	color: var(--text-accent);
+}
+
+/* Панель над клавиатурой в конспекте: встаёт на место панели Obsidian */
+body.ars-outline-panel-on .app-container > .mobile-toolbar:not(.ars-outline-panel) {
+	display: none !important;
+}
+
+/* Сама панель берёт вид панели Obsidian; свои тут только размеры кнопок: не меньше 44pt, все восемь влезают в iPhone */
+.ars-outline-panel .ars-outline-panel-list {
+	justify-content: center;
+}
+
+.ars-outline-panel .ars-outline-btn {
+	flex: 1 1 44px;
+	min-width: 44px;
+	max-width: 56px;
+	min-height: 44px;
+	-webkit-tap-highlight-color: transparent;
+}
+
+.ars-outline-panel .ars-outline-btn:active {
+	background: var(--background-modifier-hover);
+}
+
+.ars-outline-panel .ars-outline-btn.mod-hide {
+	color: var(--text-muted);
+}
+
+/* iPhone: глубокие уровни конспекта не уезжают за край. Работает с отступом табуляцией. */
+body.is-phone .ars-outline-view,
+body.is-phone .ars-outline-view .markdown-source-view,
+body.is-phone .ars-outline-view .markdown-preview-view {
+	--list-indent: 1.25em;
 }
