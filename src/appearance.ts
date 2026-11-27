@@ -88,8 +88,12 @@ export function renderAppearance(el: HTMLElement, host: SettingsHost, rerender: 
 		.addToggle((t) => t.setValue(s.tapZones).onChange((v) => set({ tapZones: v })));
 
 	new Setting(el)
-		.setName("Анимация листания")
-		.addToggle((t) => t.setValue(s.animated).onChange((v) => set({ animated: v })));
+		.setName("Как перелистывается страница")
+		.setDesc("«Уголок» — как бумажная: тянешь за край, страница загибается, под ней видна следующая. Тап по краю листает так же.")
+		.addDropdown((d) => d
+			.addOptions({ curl: "Уголок", slide: "Сдвиг", none: "Сразу" })
+			.setValue(s.turn)
+			.onChange((v) => set({ turn: v as ReaderSettings["turn"] })));
 }
 
 export class AppearanceModal extends Modal {

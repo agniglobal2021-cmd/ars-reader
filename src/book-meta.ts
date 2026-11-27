@@ -75,7 +75,7 @@ export function bookData(meta: BookMetadata | undefined, fallbackTitle: string):
 	const language = Array.isArray(m.language) ? m.language[0] : m.language;
 	const description = typeof m.description === "string" ? m.description : "";
 	// A comic book has no title of its own: foliate gives the file name
-	const title = langMap(m.title).replace(/\.(?:cbz|epub|fb2|fbz|mobi|azw3?|zip)$/i, "").trim();
+	const title = langMap(m.title).replace(/\.(?:cbz|epub|fb2|fbz|mobi|azw3?|zip|pdf)$/i, "").trim();
 	return {
 		title: title || fallbackTitle,
 		author: contributors(m.author),

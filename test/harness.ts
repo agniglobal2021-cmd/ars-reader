@@ -6,6 +6,7 @@ import { readBook } from "../src/book-file";
 import { bookData } from "../src/book-meta";
 import { prepareCover } from "../src/cover";
 import { buildOutline, chapters as outlineChapters } from "../src/outline/doc";
+import { usePdfJs } from "../src/pdf";
 import { ReaderCore } from "../src/reader-core";
 import { DEFAULT_SETTINGS, type ReaderSettings, type Theme } from "../src/settings";
 
@@ -17,6 +18,7 @@ interface Reloc {
 	label?: string;
 	sectionLeft?: number;
 	current?: number;
+	section?: number;
 }
 
 const state = {
@@ -30,6 +32,17 @@ const state = {
 
 const host = () => document.getElementById("host") as HTMLElement;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// The page loads PDF.js as a module next to this script
+usePdfJs(async () => {
+	const w = window as unknown as { pdfjsLib?: unknown };
+	for (let i = 0; i < 400 && !w.pdfjsLib; i++) await sleep(25);
+	return w.pdfjsLib;
+}, {
+	cMapUrl: `${location.origin}/pdfjs/cmaps/`,
+	cMapPacked: true,
+	standardFontDataUrl: `${location.origin}/pdfjs/standard_fonts/`,
+});
 
 async function settle(ms = 350): Promise<void> {
 	await sleep(ms);
@@ -81,6 +94,7 @@ async function open(url: string, name: string, patch: Partial<ReaderSettings> = 
 			label: p.tocItem?.label?.trim(),
 			sectionLeft: p.time?.section,
 			current: p.location?.current,
+			section: p.section?.current,
 		}),
 		onToggleChrome: () => state.chrome++,
 		onExternalLink: (href) => state.links.push(href),
@@ -149,6 +163,34 @@ function docInfo() {
 		iframes: d.querySelectorAll("iframe, object, embed").length,
 		evilText: d.getElementById("evil-text")?.textContent ?? null,
 	};
+}
+
+/** The PDF frames on screen: canvas size, text spans, policy, shown or hidden. */
+function pdfInfo() {
+	const contents = state.core?.view.renderer.getContents() ?? [];
+	return contents.map(({ doc }) => {
+		const frame = doc?.defaultView?.frameElement as HTMLElement | null;
+		const box = frame?.getBoundingClientRect();
+		// Near the right edge, in the coloured band across the top: the page, not the empty frame
+		const root = doc?.documentElement;
+		const hit = root ? doc.elementFromPoint(root.clientWidth * 0.95, root.clientHeight * 0.04) : null;
+		return {
+			canvas: doc?.querySelector("canvas")?.width ?? 0,
+			whole: !!hit && hit !== root && hit !== doc?.body,
+			spans: doc?.querySelectorAll(".textLayer span").length ?? 0,
+			csp: !!doc?.querySelector('meta[http-equiv="Content-Security-Policy"]'),
+			visible: !!box && box.width > 0 && getComputedStyle(frame!.parentElement!).display !== "none",
+		};
+	});
+}
+
+/** A page is being turned by its corner right now. */
+function turning(): boolean {
+	return !!state.core?.view.renderer.hasAttribute("turning");
+}
+
+function tint(): string | null {
+	return state.core?.view.getAttribute("data-tint") ?? null;
 }
 
 function pwned(): string[] {
@@ -268,4 +310,4 @@ async function covers() {
 	};
 }
 
-(window as unknown as { H: unknown }).H = { chapters, open, step, goTo, update, docInfo, pwned, clickInBook, submitForm, cspProbe, summary, settle, bookFile, unreadable, covers };
+(window as unknown as { H: unknown }).H = { turning, pdfInfo, tint, chapters, open, step, goTo, update, docInfo, pwned, clickInBook, submitForm, cspProbe, summary, settle, bookFile, unreadable, covers };

@@ -1,6 +1,7 @@
 import { TAG } from "../vendor/foliate-js/tags.js";
-import { makeBook, type Book, type Progress, type View } from "../vendor/foliate-js/view.js";
+import type { Book, Progress, View } from "../vendor/foliate-js/view.js";
 import { bookCss, type Look } from "./book-css";
+import { openBookFile } from "./open-book";
 import { secureBook } from "./sanitize";
 import { SPREAD_MIN_WIDTH, type ReaderSettings, type Theme } from "./settings";
 
@@ -19,6 +20,16 @@ export interface CoreOptions {
 }
 
 const SAFE_EXTERNAL = /^(?:https?:|mailto:)/i;
+
+/**
+ * The back of a turning PDF page: white paper under each theme's tint (styles.css, data-tint).
+ * sepia(0.32) brightness(0.97) and invert(0.9) hue-rotate(180deg) applied to white.
+ */
+export const PDF_PAPER: Record<Exclude<Theme, "auto">, { paper: string; dark: boolean }> = {
+	light: { paper: "#ffffff", dark: false },
+	sepia: { paper: "#f7f7f2", dark: false },
+	night: { paper: "#1a1a1a", dark: true },
+};
 const TAP_SLOP = 12;
 const TAP_MS = 450;
 
@@ -33,7 +44,6 @@ export class ReaderCore {
 	private theme: Exclude<Theme, "auto">;
 	private look: Look;
 	private readonly observer: ResizeObserver;
-	private readonly docs = new Set<Document>();
 	private readonly keyHandler = (e: KeyboardEvent) => this.onKey(e);
 	private destroyed = false;
 
@@ -52,7 +62,7 @@ export class ReaderCore {
 	}
 
 	static async open(host: HTMLElement, opts: CoreOptions): Promise<ReaderCore> {
-		const book = await makeBook(opts.file);
+		const book = await openBookFile(opts.file);
 		secureBook(book);
 		const view = document.createElement(TAG.view) as View;
 		view.classList.add("ars-reader-book");
@@ -132,23 +142,37 @@ export class ReaderCore {
 		return this.view.renderer.heads?.length ?? 1;
 	}
 
+	/** A PDF: pages are pictures, the theme can only tint them. */
+	get isPdf(): boolean {
+		return (this.book as { kind?: string }).kind === "pdf";
+	}
+
 	private applyStyles(): void {
-		this.view.renderer.setStyles?.(bookCss(this.settings, this.theme, this.look));
+		const r = this.view.renderer;
+		r.setStyles?.(bookCss(this.settings, this.theme, this.look));
+		if (this.isPdf) this.view.setAttribute("data-tint", this.theme);
+		if (this.isFixedLayout) {
+			// Comics and fixed-layout pages keep their own colours: their back is white paper
+			const { paper, dark } = this.isPdf ? PDF_PAPER[this.theme] : PDF_PAPER.light;
+			r.setAttribute("paper", paper);
+			r.setAttribute("paper-dark", String(dark));
+		}
 	}
 
 	private applyLayout(): void {
 		const r = this.view.renderer;
-		if (this.isFixedLayout) return;
 		const s = this.settings;
 		const set = (name: string, value: string) => {
 			if (r.getAttribute(name) !== value) r.setAttribute(name, value);
 		};
+		set("turn", s.turn);
+		if (this.isFixedLayout) return;
 		set("flow", s.flow);
 		set("gap", `${s.margin}%`);
 		set("margin", "28px");
 		set("max-inline-size", "680px");
 		this.layout();
-		if (s.animated) r.setAttribute("animated", "");
+		if (s.turn !== "none") r.setAttribute("animated", "");
 		else r.removeAttribute("animated");
 	}
 
@@ -162,7 +186,6 @@ export class ReaderCore {
 	}
 
 	private onSectionLoad(doc: Document): void {
-		this.docs.add(doc);
 		doc.addEventListener("keydown", (e) => this.onKey(e));
 		let start: { x: number; y: number; t: number } | null = null;
 		doc.addEventListener("pointerdown", (e) => {
@@ -223,7 +246,6 @@ export class ReaderCore {
 		this.destroyed = true;
 		this.host.removeEventListener("keydown", this.keyHandler);
 		this.observer.disconnect();
-		this.docs.clear();
 		try {
 			this.view.close();
 		} catch {

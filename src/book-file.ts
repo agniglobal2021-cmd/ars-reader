@@ -1,7 +1,8 @@
 // A book file read without showing it: what «Добавить книгу» fills the form with.
-import { makeBook, type Book } from "../vendor/foliate-js/view.js";
+import type { Book } from "../vendor/foliate-js/view.js";
 import { bookData, formatOf, type BookData } from "./book-meta";
 import { explainOpenError, MIME, stem } from "./formats";
+import { openBookFile } from "./open-book";
 
 /** A message for you instead of the form's data, with one thing to do about it. */
 export class FormMessage extends Error {
@@ -24,7 +25,7 @@ export async function coverOf(book: Book): Promise<Blob | null> {
 export async function readBook(bytes: Uint8Array, name: string): Promise<{ data: BookData; cover: Blob | null }> {
 	let book: Book;
 	try {
-		book = await makeBook(new File([bytes as BlobPart], name, { type: MIME[formatOf(name)] ?? "" }));
+		book = await openBookFile(new File([bytes as BlobPart], name, { type: MIME[formatOf(name)] ?? "" }));
 	} catch (e) {
 		throw new FormMessage(explainOpenError(e));
 	}

@@ -249,3 +249,13 @@ export function itemUnderHeading(text: string, headLine: number): { text: string
 	const next = headings(lines).find((h) => h.line > headLine && h.level <= head.level);
 	return bulletAtEnd(lines, headLine, next ? next.line : lines.length);
 }
+
+/** Chapter headings of an outline and how many have something written under them. */
+export function skeletonCount(text: string): { done: number; total: number } {
+	const lines = text.split("\n");
+	const heads = headings(lines).filter((h) => h.level <= CHAPTER_LEVEL);
+	const c: Chapters = { lines, heads, at: heads.map((h) => h.line) };
+	let done = 0;
+	for (let k = 0; k < heads.length; k++) if (hasSkeleton(c, k)) done++;
+	return { done, total: heads.length };
+}

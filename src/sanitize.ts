@@ -141,17 +141,22 @@ export function secureBook(book: Book): void {
 		const unload = section.unload?.bind(section);
 		let original: string | null = null;
 		let safe: string | null = null;
-		section.load = async () => {
-			const url = await load();
+		const clean = async (url: string): Promise<string> => {
 			if (!url || !url.startsWith("blob:")) return url;
 			if (url === original && safe) return safe;
 			const blob = await (await fetch(url)).blob();
 			if (!isMarkup(blob.type)) return url;
-			const clean = await prepareMarkup(await blob.text(), blob.type);
+			const cleaned = await prepareMarkup(await blob.text(), blob.type);
 			if (safe) URL.revokeObjectURL(safe);
 			original = url;
-			safe = URL.createObjectURL(new Blob([clean.text], { type: clean.type }));
+			safe = URL.createObjectURL(new Blob([cleaned.text], { type: cleaned.type }));
 			return safe;
+		};
+		section.load = async () => {
+			const got = await load();
+			// A page the app draws itself (PDF): its frame is cleaned the same way
+			if (got && typeof got === "object") return { ...got, src: await clean(got.src) };
+			return clean(got);
 		};
 		section.unload = () => {
 			unload?.();

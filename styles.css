@@ -597,3 +597,733 @@ body.is-phone .ars-outline-view .markdown-preview-view {
 .ars-book-modal.is-phone .ars-book-buttons button {
 	flex: 1 1 0;
 }
+
+/* PDF: страницы — картинки, тема их только подкрашивает */
+.ars-reader-book[data-tint="sepia"]::part(filter) {
+	filter: sepia(0.32) brightness(0.97);
+}
+
+.ars-reader-book[data-tint="night"]::part(filter) {
+	filter: invert(0.9) hue-rotate(180deg);
+}
+
+/* ───────── Библиотека: главный экран Читальни ─────────
+   Всё берётся из темы Obsidian. С темой Ars Memoria — её лист, шум, кнопки и вдавленные панели Win95,
+   готика в заголовках; с любой другой темой — её цвета и шрифты. */
+
+.workspace-leaf-content[data-type="ars-library"] .view-content.ars-library {
+	--ars-lib-w: 128px;
+	--ars-lib-gap: 18px;
+	--ars-lib-face: var(--ars-win, var(--interactive-normal));
+	--ars-lib-hi: var(--ars-win-hi, var(--background-modifier-border));
+	--ars-lib-sh: var(--ars-win-sh, var(--background-modifier-border));
+	--ars-lib-mid: var(--ars-win-mid, transparent);
+	--ars-lib-well: color-mix(in srgb, var(--ars-p-well, var(--background-secondary)) 55%, var(--ars-page, var(--background-primary)));
+	--ars-lib-well-hi: var(--ars-p-hi, var(--background-modifier-border));
+	--ars-lib-well-sh: var(--ars-p-sh, var(--background-modifier-border));
+	--ars-lib-field: var(--ars-field, var(--background-modifier-form-field));
+	--ars-lib-ink: var(--text-normal);
+	--ars-lib-accent: var(--text-accent);
+	padding: 0;
+	position: relative;
+	isolation: isolate;
+	overflow: clip;
+	background-color: var(--background-primary);
+}
+
+/* Шум листа, как в заметках Ars Memoria. Без этой темы его нет */
+.workspace-leaf-content[data-type="ars-library"] .view-content.ars-library::before {
+	content: "";
+	position: absolute;
+	inset: -128px;
+	z-index: -1;
+	pointer-events: none;
+	background: var(--ars-grain, none) 0 0 / 128px 128px repeat;
+	will-change: transform;
+	animation: ars-grain 1s steps(1, end) infinite;
+}
+
+body.ars-grain-still .workspace-leaf-content[data-type="ars-library"] .view-content.ars-library::before {
+	animation: none;
+}
+
+body.ars-no-grain .workspace-leaf-content[data-type="ars-library"] .view-content.ars-library::before {
+	display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.workspace-leaf-content[data-type="ars-library"] .view-content.ars-library::before {
+		animation: none;
+	}
+}
+
+.ars-lib-scroll {
+	position: absolute;
+	inset: 0;
+	overflow-x: hidden;
+	overflow-y: auto;
+	-webkit-overflow-scrolling: touch;
+}
+
+.ars-lib {
+	container-type: inline-size;
+	max-width: 1140px;
+	margin: 0 auto;
+	padding: 22px 30px 72px;
+	color: var(--ars-lib-ink);
+	font-family: var(--font-text);
+}
+
+.ars-lib-muted {
+	color: var(--text-muted);
+	font-size: 0.86em;
+}
+
+/* Шапка: название, поиск, «Добавить книгу» */
+.ars-lib-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px 18px;
+	margin-bottom: 14px;
+}
+
+.ars-lib-title {
+	margin: 0;
+	font-family: var(--inline-title-font, var(--h1-font));
+	font-size: var(--inline-title-size, 2.1em);
+	font-weight: var(--inline-title-weight, 700);
+	line-height: var(--inline-title-line-height, 1.15);
+	color: var(--inline-title-color, var(--text-normal));
+}
+
+.ars-lib-tools {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex: 1 1 340px;
+	justify-content: flex-end;
+}
+
+.ars-lib-search {
+	position: relative;
+	display: flex;
+	align-items: center;
+	flex: 1 1 220px;
+	max-width: 380px;
+	margin: 0;
+}
+
+.ars-lib-search-icon {
+	position: absolute;
+	left: 10px;
+	display: flex;
+	color: var(--text-muted);
+	pointer-events: none;
+}
+
+.ars-lib-search-icon svg {
+	width: 16px;
+	height: 16px;
+}
+
+.ars-lib .ars-lib-search-input {
+	width: 100%;
+	height: 36px;
+	padding: 0 10px 0 34px;
+	font-size: 16px;
+	font-family: var(--font-interface);
+	color: var(--text-normal);
+	background: var(--ars-lib-field);
+	border: 2px solid;
+	border-color: var(--ars-lib-well-sh) var(--ars-lib-well-hi) var(--ars-lib-well-hi) var(--ars-lib-well-sh);
+	border-radius: var(--input-radius);
+	box-shadow: none;
+}
+
+.ars-lib .ars-lib-search-input:focus {
+	outline: 1px dotted var(--text-normal);
+	outline-offset: -4px;
+}
+
+/* Кнопки — выпуклые, как в окнах Win95; нажатая вдавлена */
+.ars-lib button.ars-lib-button {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	height: auto;
+	min-height: 36px;
+	padding: 6px 14px;
+	font-family: var(--font-interface);
+	font-size: var(--font-ui-small);
+	color: var(--text-normal);
+	white-space: nowrap;
+	background: var(--ars-lib-face);
+	border: 2px solid;
+	border-color: var(--ars-lib-hi) var(--ars-lib-sh) var(--ars-lib-sh) var(--ars-lib-hi);
+	border-radius: var(--button-radius);
+	box-shadow: inset -1px -1px 0 var(--ars-lib-mid);
+	cursor: pointer;
+}
+
+.ars-lib button.ars-lib-button:active {
+	border-color: var(--ars-lib-sh) var(--ars-lib-hi) var(--ars-lib-hi) var(--ars-lib-sh);
+	box-shadow: inset 1px 1px 0 var(--ars-lib-mid);
+}
+
+.ars-lib button.ars-lib-button.mod-cta {
+	font-weight: 700;
+	outline: 1px solid var(--ars-lib-sh);
+	outline-offset: 0;
+}
+
+.ars-lib-button-icon {
+	display: flex;
+}
+
+.ars-lib-button-icon svg {
+	width: 16px;
+	height: 16px;
+}
+
+/* Полки и коллекции: переключатели, выбранный вдавлен */
+.ars-lib-chips {
+	display: flex;
+	gap: 6px;
+	overflow-x: auto;
+	margin: 0 -30px 12px;
+	padding: 2px 30px 8px;
+	scrollbar-width: none;
+}
+
+.ars-lib-chips::-webkit-scrollbar {
+	display: none;
+}
+
+.ars-lib button.ars-lib-chip {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: baseline;
+	gap: 6px;
+	height: auto;
+	min-height: 32px;
+	padding: 4px 12px;
+	font-family: var(--font-interface);
+	font-size: var(--font-ui-small);
+	color: var(--text-normal);
+	background: var(--ars-lib-face);
+	border: 2px solid;
+	border-color: var(--ars-lib-hi) var(--ars-lib-sh) var(--ars-lib-sh) var(--ars-lib-hi);
+	border-radius: var(--button-radius);
+	box-shadow: inset -1px -1px 0 var(--ars-lib-mid);
+	cursor: pointer;
+}
+
+.ars-lib button.ars-lib-chip.is-active {
+	font-weight: 700;
+	background: var(--ars-lib-field);
+	border-color: var(--ars-lib-sh) var(--ars-lib-hi) var(--ars-lib-hi) var(--ars-lib-sh);
+	box-shadow: inset 1px 1px 0 var(--ars-lib-mid);
+}
+
+.ars-lib-chip-count,
+.ars-lib-count {
+	font-size: 0.82em;
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+}
+
+/* Вдавленные панели: «Читаю сейчас» и статистика */
+.ars-lib-top {
+	display: grid;
+	grid-template-columns: minmax(0, 1.3fr) minmax(300px, 1fr);
+	gap: 18px;
+	margin: 6px 0 30px;
+}
+
+.ars-lib-top.is-stats-only {
+	grid-template-columns: minmax(0, 1fr);
+}
+
+.ars-lib-hero,
+.ars-lib-stats,
+.ars-lib-empty {
+	background: var(--ars-lib-well);
+	border: 2px solid;
+	border-color: var(--ars-lib-well-sh) var(--ars-lib-well-hi) var(--ars-lib-well-hi) var(--ars-lib-well-sh);
+	border-radius: var(--radius-m);
+}
+
+.ars-lib-kicker {
+	font-family: var(--h4-font, var(--font-text));
+	font-size: 0.72em;
+	letter-spacing: 0.16em;
+	text-transform: uppercase;
+	color: var(--h4-color, var(--text-accent));
+}
+
+.ars-lib-hero {
+	display: flex;
+	gap: 20px;
+	padding: 18px;
+	min-width: 0;
+}
+
+.ars-lib button.ars-lib-hero-cover {
+	display: block;
+	align-self: flex-start;
+	flex: 0 0 auto;
+	width: 136px;
+	height: auto;
+	padding: 0;
+	white-space: normal;
+	background: none;
+	border: 0;
+	box-shadow: none;
+	cursor: pointer;
+	-webkit-touch-callout: none;
+	user-select: none;
+}
+
+.ars-lib-hero-info {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	min-width: 0;
+	flex: 1 1 auto;
+}
+
+.ars-lib-hero-title {
+	font-family: var(--h2-font, var(--font-text));
+	font-size: var(--h2-size, 1.6em);
+	line-height: var(--h2-line-height, 1.2);
+	font-weight: var(--h2-weight, 700);
+	letter-spacing: var(--h2-letter-spacing, 0);
+	overflow-wrap: anywhere;
+	display: -webkit-box;
+	-webkit-line-clamp: 3;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+.ars-lib-hero-author {
+	color: var(--text-muted);
+	font-size: 0.9em;
+}
+
+.ars-lib-hero-where {
+	display: flex;
+	gap: 10px;
+	align-items: baseline;
+	margin-top: auto;
+	font-size: 0.84em;
+	color: var(--text-muted);
+	min-width: 0;
+}
+
+.ars-lib-hero-chapter {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	min-width: 0;
+}
+
+.ars-lib-hero-percent {
+	flex: 0 0 auto;
+	font-weight: 700;
+	color: var(--text-normal);
+	font-variant-numeric: tabular-nums;
+}
+
+.ars-lib button.ars-lib-continue {
+	align-self: flex-start;
+	margin-top: 6px;
+}
+
+/* Полоса прогресса Win95: вдавленная дорожка, заполненная брусками */
+.ars-lib-progress {
+	height: 10px;
+	padding: 2px;
+	background: var(--ars-lib-field);
+	box-shadow: inset 1px 1px 0 var(--ars-lib-well-sh), inset -1px -1px 0 var(--ars-lib-well-hi);
+	flex: 1 1 auto;
+	min-width: 30px;
+}
+
+.ars-lib-progress.is-big {
+	height: 18px;
+	padding: 3px;
+	flex: 0 0 auto;
+}
+
+.ars-lib-progress-fill {
+	height: 100%;
+	max-width: 100%;
+	background: repeating-linear-gradient(90deg, var(--ars-lib-accent) 0 5px, transparent 5px 7px);
+}
+
+.ars-lib-progress.is-big .ars-lib-progress-fill {
+	background: repeating-linear-gradient(90deg, var(--ars-lib-accent) 0 9px, transparent 9px 12px);
+}
+
+/* Статистика */
+.ars-lib-stats {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	padding: 16px 18px;
+	min-width: 0;
+}
+
+.ars-lib-stat-grid {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 12px 14px;
+}
+
+.ars-lib-stat-value {
+	font-size: 1.3em;
+	font-weight: 700;
+	line-height: 1.2;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.ars-lib-stat.is-streak .ars-lib-stat-value {
+	color: var(--ars-lib-accent);
+}
+
+.ars-lib-stat-label {
+	font-size: 0.74em;
+	line-height: 1.3;
+	color: var(--text-muted);
+}
+
+/* Неделя: столбик на день, брусками */
+.ars-lib-week {
+	display: grid;
+	grid-template-columns: repeat(7, minmax(0, 1fr));
+	gap: 8px;
+	margin-top: auto;
+}
+
+.ars-lib-day {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 4px;
+}
+
+.ars-lib-day-track {
+	width: 100%;
+	max-width: 26px;
+	height: 46px;
+	display: flex;
+	align-items: flex-end;
+	background: var(--ars-lib-field);
+	box-shadow: inset 1px 1px 0 var(--ars-lib-well-sh), inset -1px -1px 0 var(--ars-lib-well-hi);
+	padding: 2px;
+}
+
+.ars-lib-day-bar {
+	width: 100%;
+	min-height: 0;
+	background: repeating-linear-gradient(0deg, var(--ars-lib-accent) 0 4px, transparent 4px 6px);
+}
+
+.ars-lib-day-label {
+	font-size: 0.7em;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+}
+
+.ars-lib-day.is-today .ars-lib-day-label {
+	color: var(--ars-lib-accent);
+	font-weight: 700;
+}
+
+.ars-lib-day.is-future .ars-lib-day-track {
+	opacity: 0.45;
+}
+
+/* Полки: ряды обложек */
+.ars-lib-section {
+	margin: 0 0 30px;
+}
+
+.ars-lib-section-head {
+	display: flex;
+	align-items: baseline;
+	gap: 10px;
+	margin-bottom: 12px;
+}
+
+.ars-lib-section-title {
+	margin: 0;
+	font-family: var(--h2-font, var(--font-text));
+	font-size: 1.5em;
+	font-weight: var(--h2-weight, 700);
+	line-height: 1.15;
+}
+
+.ars-lib button.ars-lib-link {
+	margin-left: auto;
+	height: auto;
+	padding: 4px 2px;
+	background: none;
+	border: 0;
+	box-shadow: none;
+	color: var(--link-color, var(--text-accent));
+	font-weight: var(--link-weight, 600);
+	font-size: 0.86em;
+	cursor: pointer;
+}
+
+.ars-lib-row {
+	display: grid;
+	grid-auto-flow: column;
+	grid-auto-columns: var(--ars-lib-w);
+	gap: var(--ars-lib-gap);
+	overflow-x: auto;
+	overflow-y: hidden;
+	overscroll-behavior-x: contain;
+	scroll-snap-type: x proximity;
+	margin: 0 -30px;
+	padding: 4px 30px 10px;
+	scroll-padding: 0 30px;
+}
+
+.is-mobile .ars-lib-row {
+	scrollbar-width: none;
+}
+
+.is-mobile .ars-lib-row::-webkit-scrollbar {
+	display: none;
+}
+
+.ars-lib-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(var(--ars-lib-w), 1fr));
+	gap: 24px var(--ars-lib-gap);
+	padding-top: 4px;
+}
+
+.ars-lib-nothing {
+	padding: 10px 0;
+}
+
+/* Книга на полке: обложка, название, автор, где ты */
+.ars-lib button.ars-lib-book {
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	justify-content: flex-start;
+	gap: 8px;
+	min-width: 0;
+	height: auto;
+	padding: 0;
+	text-align: left;
+	white-space: normal;
+	color: inherit;
+	font: inherit;
+	background: none;
+	border: 0;
+	border-radius: 0;
+	box-shadow: none;
+	cursor: pointer;
+	scroll-snap-align: start;
+	-webkit-touch-callout: none;
+	-webkit-user-select: none;
+	user-select: none;
+	-webkit-tap-highlight-color: transparent;
+}
+
+.ars-lib-cover {
+	position: relative;
+	width: 100%;
+	aspect-ratio: 2 / 3;
+	overflow: hidden;
+	background: var(--ars-lib-well);
+	border: 1px solid var(--ars-lib-well-sh);
+	box-shadow: 2px 2px 0 color-mix(in srgb, var(--ars-lib-well-sh) 70%, transparent);
+	transition: transform 80ms ease-out;
+}
+
+.ars-lib-cover.is-big {
+	box-shadow: 3px 3px 0 color-mix(in srgb, var(--ars-lib-well-sh) 70%, transparent);
+}
+
+.ars-lib-cover img {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	-webkit-user-drag: none;
+	pointer-events: none;
+}
+
+.ars-lib button.ars-lib-book:active .ars-lib-cover,
+.ars-lib button.ars-lib-hero-cover:active .ars-lib-cover {
+	transform: translate(2px, 2px);
+	box-shadow: none;
+}
+
+/* Обложка, нарисованная для книги без картинки: цвет пигмента, двойная рамка, название готикой.
+   Обложка — вещь: в тёмной теме она того же цвета, что и в светлой */
+.ars-lib-cover.is-drawn {
+	container-type: inline-size;
+	background: var(--ars-lib-pigment);
+	color: #f2e3c0;
+}
+
+.ars-lib-drawn {
+	position: absolute;
+	inset: 7%;
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+	padding: 10% 8%;
+	border: 3px double color-mix(in srgb, currentColor 75%, transparent);
+	text-align: center;
+	overflow: hidden;
+}
+
+.ars-lib-drawn-title {
+	font-family: var(--h2-font, var(--font-text));
+	font-size: 15cqw;
+	line-height: 1.12;
+	overflow-wrap: anywhere;
+	display: -webkit-box;
+	-webkit-line-clamp: 5;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+.ars-lib-drawn-author {
+	font-size: 6.5cqw;
+	letter-spacing: 0.1em;
+	overflow-wrap: anywhere;
+	text-transform: uppercase;
+	opacity: 0.85;
+	overflow: hidden;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+}
+
+.ars-lib-book-meta {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.ars-lib-book-title {
+	font-size: 0.84em;
+	font-weight: 700;
+	line-height: 1.3;
+	overflow-wrap: anywhere;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+.ars-lib-book-author {
+	font-size: 0.76em;
+	color: var(--text-muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.ars-lib-book-state {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-top: 4px;
+	font-size: 0.72em;
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+}
+
+.ars-lib-book-state.is-done {
+	color: var(--ars-lib-accent);
+	letter-spacing: 0.04em;
+}
+
+/* Пустая библиотека */
+.ars-lib-empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 12px;
+	padding: 40px 24px;
+	text-align: center;
+}
+
+.ars-lib-empty-title {
+	font-family: var(--h2-font, var(--font-text));
+	font-size: 1.5em;
+}
+
+/* Узко: панели друг под другом */
+@container (max-width: 760px) {
+	.ars-lib-top {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+@container (max-width: 520px) {
+	.ars-lib-hero {
+		gap: 14px;
+		padding: 14px;
+	}
+
+	.ars-lib button.ars-lib-hero-cover {
+		width: 104px;
+	}
+
+	.ars-lib-hero-title {
+		font-size: 1.35em;
+	}
+
+	.ars-lib-stat-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+/* iPhone: обложки меньше, поля уже */
+.is-phone .workspace-leaf-content[data-type="ars-library"] .view-content.ars-library {
+	--ars-lib-w: 104px;
+	--ars-lib-gap: 14px;
+}
+
+.is-phone .ars-lib {
+	padding: 14px 16px 56px;
+}
+
+.is-phone .ars-lib-chips,
+.is-phone .ars-lib-row {
+	margin-left: -16px;
+	margin-right: -16px;
+	padding-left: 16px;
+	padding-right: 16px;
+	scroll-padding: 0 16px;
+}
+
+.is-phone .ars-lib-tools {
+	flex-basis: 100%;
+}
+
+.is-phone .ars-lib-search {
+	max-width: none;
+}
+
+.is-phone .ars-lib .ars-lib-add > span:last-child {
+	display: none;
+}

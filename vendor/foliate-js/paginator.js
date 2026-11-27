@@ -1,5 +1,11 @@
 import { TAG, define } from './tags.js'
+// ars-reader: turning pages by the corner
+import { PageCurl, isDark } from '../../src/curl'
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+const reduceMotion = typeof matchMedia === 'function'
+    ? matchMedia('(prefers-reduced-motion: reduce)') : { matches: false }
+// a section bigger than this is not copied into the second view (the curl falls back to sliding)
+const MIRROR_MAX_SIZE = 3_000_000
 
 const debounce = (f, wait, immediate) => {
     let timeout
@@ -427,6 +433,7 @@ export class Paginator extends HTMLElement {
     static observedAttributes = [
         'flow', 'gap', 'margin',
         'max-inline-size', 'max-block-size', 'max-column-count',
+        'turn',
     ]
     #root = this.attachShadow({ mode: 'closed' })
     #observer = new ResizeObserver(() => this.render())
@@ -451,6 +458,20 @@ export class Paginator extends HTMLElement {
     #touchState
     #touchScrolled
     #lastVisibleRange
+    // ars-reader: a second view of a section (the page under a turning page), sections shared
+    // between the two views by count, and the turn in progress
+    #mirrorBox
+    #mirror = null
+    #mirrorIndex = -1
+    #mirrorWant = -1
+    #mirrorTask = null
+    #mirrorTimer = 0
+    #loads = new Map()
+    #lastLayout = null
+    #curlBox
+    #curl
+    #turn = null
+    #gesture = null
     constructor() {
         super()
         this.#root.innerHTML = `<style>
@@ -509,6 +530,32 @@ export class Paginator extends HTMLElement {
             grid-column: 2 / 5;
             grid-row: 2;
             overflow: hidden;
+            position: relative;
+            z-index: 1;
+        }
+        #mirror {
+            grid-column: 2 / 5;
+            grid-row: 2;
+            overflow: hidden;
+            position: relative;
+            z-index: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+        #top.curling #mirror {
+            visibility: visible;
+        }
+        #top.curl-over #mirror {
+            z-index: 2;
+        }
+        #curl {
+            grid-column: 1 / -1;
+            grid-row: 1 / -1;
+            position: relative;
+            z-index: 3;
+        }
+        :host([flow="scrolled"]) :is(#mirror, #curl) {
+            display: none;
         }
         :host([flow="scrolled"]) #container {
             grid-column: 1 / -1;
@@ -546,8 +593,10 @@ export class Paginator extends HTMLElement {
         <div id="top">
             <div id="background" part="filter"></div>
             <div id="header"></div>
+            <div id="mirror"></div>
             <div id="container"></div>
             <div id="footer"></div>
+            <div id="curl"></div>
         </div>
         `
 
@@ -556,6 +605,9 @@ export class Paginator extends HTMLElement {
         this.#container = this.#root.getElementById('container')
         this.#header = this.#root.getElementById('header')
         this.#footer = this.#root.getElementById('footer')
+        this.#mirrorBox = this.#root.getElementById('mirror')
+        this.#curlBox = this.#root.getElementById('curl')
+        this.#curl = new PageCurl(this.#curlBox)
 
         this.#observer.observe(this.#container)
         this.#container.addEventListener('scroll', () => this.dispatchEvent(new Event('scroll')))
@@ -570,10 +622,12 @@ export class Paginator extends HTMLElement {
         this.addEventListener('touchstart', this.#onTouchStart.bind(this), opts)
         this.addEventListener('touchmove', this.#onTouchMove.bind(this), opts)
         this.addEventListener('touchend', this.#onTouchEnd.bind(this))
+        this.addEventListener('touchcancel', this.#onTouchCancel.bind(this))
         this.addEventListener('load', ({ detail: { doc } }) => {
             doc.addEventListener('touchstart', this.#onTouchStart.bind(this), opts)
             doc.addEventListener('touchmove', this.#onTouchMove.bind(this), opts)
             doc.addEventListener('touchend', this.#onTouchEnd.bind(this))
+            doc.addEventListener('touchcancel', this.#onTouchCancel.bind(this))
         })
 
         this.addEventListener('relocate', ({ detail }) => {
@@ -629,6 +683,9 @@ export class Paginator extends HTMLElement {
     }
     attributeChangedCallback(name, _, value) {
         switch (name) {
+            case 'turn':
+                this.#scheduleMirror()
+                break
             case 'flow':
                 this.render()
                 break
@@ -717,6 +774,7 @@ export class Paginator extends HTMLElement {
 
         const flow = this.getAttribute('flow')
         if (flow === 'scrolled') {
+            this.#lastLayout = null
             // FIXME: vertical-rl only, not -lr
             this.setAttribute('dir', vertical ? 'rtl' : 'ltr')
             this.#top.style.padding = '0'
@@ -737,6 +795,7 @@ export class Paginator extends HTMLElement {
         const marginalDivisor = vertical
             ? Math.min(2, Math.ceil(width / maxInlineSize))
             : divisor
+        this.#lastLayout = { height, width, margin, gap, columnWidth }
         const marginalStyle = {
             gridTemplateColumns: `repeat(${marginalDivisor}, 1fr)`,
             gap: `${gap}px`,
@@ -755,11 +814,15 @@ export class Paginator extends HTMLElement {
     }
     render() {
         if (!this.#view) return
+        // a turn in progress would no longer match the pages
+        this.#abortTurn()
         this.#view.render(this.#beforeRender({
             vertical: this.#vertical,
             rtl: this.#rtl,
         }))
+        if (this.#mirror && this.#lastLayout) this.#mirror.render(this.#lastLayout)
         this.#scrollToAnchor(this.#anchor)
+        this.#scheduleMirror()
     }
     get scrolled() {
         return this.getAttribute('flow') === 'scrolled'
@@ -829,12 +892,22 @@ export class Paginator extends HTMLElement {
             t: e.timeStamp,
             vx: 0, xy: 0,
         }
+        // ars-reader: with the curl, a horizontal drag pulls the page by its corner
+        this.#gesture = touch && e.touches.length === 1 && this.#curlEnabled && !this.#locked
+            ? { x: touch.screenX, y: touch.screenY, hostY: this.#hostY(e, touch), samples: [], active: false, dead: false }
+            : null
     }
     #onTouchMove(e) {
         const state = this.#touchState
+        if (this.#gesture) return this.#dragMove(e, this.#gesture)
         if (state.pinched) return
         state.pinched = globalThis.visualViewport.scale > 1
         if (this.scrolled || state.pinched) return
+        // ars-reader: pages that curl never slide under the finger
+        if (this.#curlEnabled) {
+            if (e.touches.length === 1) e.preventDefault()
+            return
+        }
         if (e.touches.length > 1) {
             if (this.#touchScrolled) e.preventDefault()
             return
@@ -852,9 +925,20 @@ export class Paginator extends HTMLElement {
         this.#touchScrolled = true
         this.scrollBy(dx, dy)
     }
-    #onTouchEnd() {
+    #onTouchEnd(e) {
         this.#touchScrolled = false
-        if (this.scrolled) return
+        const g = this.#gesture
+        this.#gesture = null
+        if (g?.active) {
+            // the finger's speed over its last moves; a finger that stopped before lifting has none
+            const s = g.samples
+            const last = s[s.length - 1]
+            const v = s.length > 1 && e.timeStamp - last[0] < 100
+                ? (last[1] - s[0][1]) / Math.max(1, last[0] - s[0][0]) : 0
+            void this.#endDrag(v)
+            return
+        }
+        if (this.scrolled || this.#curlEnabled) return
 
         // XXX: Firefox seems to report scale as 1... sometimes...?
         // at this point I'm basically throwing `requestAnimationFrame` at
@@ -864,6 +948,296 @@ export class Paginator extends HTMLElement {
                 this.snap(this.#touchState.vx, this.#touchState.vy)
         })
     }
+    #onTouchCancel() {
+        const g = this.#gesture
+        this.#gesture = null
+        if (g?.active) void this.#endDrag(null)
+    }
+
+    // ── ars-reader: turning pages by the corner ──
+
+    get #curlEnabled() {
+        return this.getAttribute('turn') === 'curl' && !this.scrolled && !this.#vertical
+            && !this.#rtl && this.bookDir !== 'rtl' && !reduceMotion.matches
+    }
+    // the touch's height over the pages, whether it landed in the book's frame or around it
+    #hostY(e, touch) {
+        const top = this.#top.getBoundingClientRect()
+        const node = e.target
+        const doc = node?.nodeType === 9 ? node : node?.ownerDocument
+        const frame = doc && doc !== document ? doc.defaultView?.frameElement : null
+        return (frame ? frame.getBoundingClientRect().top : 0) + touch.clientY - top.top
+    }
+    #dragMove(e, g) {
+        if (g.dead) {
+            if (!g.native && e.touches.length === 1) e.preventDefault()
+            return
+        }
+        if (e.touches.length > 1 || globalThis.visualViewport?.scale > 1) {
+            // a pinch: the browser zooms, the page falls back
+            g.dead = true
+            g.native = true
+            if (g.active) void this.#endDrag(null)
+            return
+        }
+        e.preventDefault()
+        const touch = e.changedTouches[0]
+        const dx = touch.screenX - g.x, dy = touch.screenY - g.y
+        g.samples.push([e.timeStamp, dx])
+        while (g.samples.length > 2 && e.timeStamp - g.samples[0][0] > 90) g.samples.shift()
+        if (!g.active) {
+            if (Math.hypot(dx, dy) < 10) return
+            // up and down is not a turn
+            if (Math.abs(dy) > Math.abs(dx) * 1.15) {
+                g.dead = true
+                return
+            }
+            if (!this.#beginDrag(dx < 0 ? 1 : -1, g.hostY)) {
+                g.dead = true
+                return
+            }
+            g.active = true
+        }
+        this.#curl.move(dx, dy)
+    }
+    #beginDrag(dir, grabY) {
+        if (this.#locked) return false
+        const target = this.#turnTarget(dir)
+        if (!target) return false
+        this.#locked = true
+        const turn = this.#startTurn(dir, target, grabY)
+        void this.#readyMirror(turn)
+        return true
+    }
+    async #endDrag(velocity) {
+        const turn = this.#turn
+        if (!turn) {
+            this.#locked = false
+            return
+        }
+        // null: the touch was taken away (a pinch, the system): the page falls back
+        const done = velocity === null ? await this.#curl.cancel() : await this.#curl.release(velocity)
+        if (this.#turn === turn) {
+            if (done) {
+                await this.#curl.reveal()
+                await this.#commitTurn(turn)
+            }
+            this.#endTurn()
+        }
+        this.#locked = false
+    }
+    // the page a turn shows: in this section, or the first (last) page of the next (previous)
+    #turnTarget(dir) {
+        if (!this.#view) return null
+        const { page, pages } = this
+        const p = page + dir
+        if (p >= 1 && p <= pages - 2) return { index: this.#index, page: p, same: true }
+        const index = this.#adjacentIndex(dir)
+        if (index == null) return null
+        return { index, page: dir > 0 ? 1 : null, same: false }
+    }
+    #turnSpec(dir, grabY) {
+        const top = this.#top.getBoundingClientRect()
+        const box = this.#container.getBoundingClientRect()
+        const W = top.width, H = top.height
+        const offset = { x: box.left - top.left, y: box.top - top.top }
+        const corner = grabY != null && grabY < H * 0.42 ? 'top' : 'bottom'
+        const paper = this.#paper()
+        const look = { paper, dark: isDark(paper) }
+        if ((this.heads?.length ?? 1) < 2) {
+            const leaf = { rect: { x: 0, y: 0, w: W, h: H }, spine: 'left' }
+            // forward: this page lifts off the next; back: the previous page comes down over this one
+            return dir > 0
+                ? { leaf, corner, mode: 'lift', top: this.#container, offset, look }
+                : { leaf, corner, mode: 'return', top: this.#mirrorBox, offset, look }
+        }
+        // two pages: the right one turns over to the left, or the left one back to the right
+        const spine = offset.x + box.width / 2
+        const left = { x: 0, y: 0, w: spine, h: H }
+        const right = { x: spine, y: 0, w: W - spine, h: H }
+        return dir > 0
+            ? { leaf: { rect: right, spine: 'left' }, corner, mode: 'lift', top: this.#container, offset, keep: left, look }
+            : { leaf: { rect: left, spine: 'right' }, corner, mode: 'lift', top: this.#container, offset, keep: right, look }
+    }
+    #paper() {
+        const bg = getComputedStyle(this.#background).backgroundColor
+        return bg && bg !== 'transparent' && !/rgba\(.*,\s*0\)$/.test(bg) ? bg : '#ffffff'
+    }
+    #startTurn(dir, target, grabY) {
+        const turn = { dir, target: { ...target }, ready: false }
+        this.#turn = turn
+        const spec = this.#turnSpec(dir, grabY)
+        this.#top.classList.toggle('curl-over', spec.mode === 'return')
+        // until the second view shows the right page, the paper under the turning page is blank
+        this.#mirrorBox.style.opacity = '0'
+        this.#top.classList.add('curling')
+        this.setAttribute('turning', '')
+        this.#curl.begin(spec)
+        return turn
+    }
+    async #readyMirror(turn) {
+        const { index } = turn.target
+        if (this.#mirrorIndex !== index || !this.#mirror) {
+            this.#mirrorWant = index
+            await this.#loadMirror(index)
+        }
+        if (this.#turn !== turn || this.#mirrorIndex !== index || !this.#mirror) return false
+        turn.target.page ??= Math.max(1, this.#mirrorPages() - 2)
+        this.#mirrorBox.scrollLeft = this.size * turn.target.page
+        this.#mirrorBox.style.opacity = ''
+        turn.ready = true
+        return true
+    }
+    #mirrorPages() {
+        const size = this.size
+        return size ? Math.round(this.#mirror.element.getBoundingClientRect().width / size) : 0
+    }
+    // a turn by itself (tap, keys). False: the page under it is not ready, the turn slides instead
+    async #curlTurn(dir) {
+        const target = this.#turnTarget(dir)
+        if (!target) return false
+        if (this.#mirrorIndex !== target.index || !this.#mirror) {
+            this.#mirrorWant = target.index
+            const ok = await Promise.race([this.#loadMirror(target.index), wait(450).then(() => false)])
+            if (!ok || this.#mirrorIndex !== target.index) return false
+        }
+        const turn = this.#startTurn(dir, target, null)
+        if (!(await this.#readyMirror(turn))) {
+            if (this.#turn === turn) this.#endTurn()
+            return false
+        }
+        const done = await this.#curl.play()
+        if (this.#turn !== turn) return true
+        if (done) {
+            await this.#curl.reveal()
+            await this.#commitTurn(turn)
+        }
+        this.#endTurn()
+        return true
+    }
+    async #commitTurn(turn) {
+        const { dir, target } = turn
+        if (target.same) await this.#scrollToPage(target.page, 'page')
+        else await this.#goTo({ index: target.index, anchor: dir > 0 ? () => 0 : () => 1 })
+    }
+    #endTurn() {
+        this.#turn = null
+        this.removeAttribute('turning')
+        this.#curl.stop()
+        this.#top.classList.remove('curling', 'curl-over')
+        this.#mirrorBox.style.opacity = ''
+        this.#scheduleMirror()
+    }
+    #abortTurn() {
+        if (!this.#turn) return
+        this.#gesture = null
+        this.#endTurn()
+        this.#locked = false
+    }
+    #scheduleMirror() {
+        clearTimeout(this.#mirrorTimer)
+        this.#mirrorTimer = setTimeout(() => void this.#syncMirror(), 160)
+    }
+    // the second view holds the section of the next forward turn: this one, or the next at its end
+    #mirrorTarget() {
+        if (!this.#curlEnabled || !this.#view || !(this.#index >= 0)) return -1
+        const { page, pages } = this
+        if (pages > 2 && page >= pages - 2) {
+            const next = this.#adjacentIndex(1)
+            if (next != null) return next
+        }
+        return this.#index
+    }
+    async #syncMirror() {
+        if (this.#turn) return
+        const want = this.#mirrorTarget()
+        if (want < 0) return this.#dropMirror()
+        if (want === this.#mirrorIndex && this.#mirror) return
+        this.#mirrorWant = want
+        await this.#loadMirror(want)
+    }
+    #loadMirror(index) {
+        if (this.#mirrorTask?.index === index) return this.#mirrorTask.promise
+        const promise = this.#makeMirror(index)
+        const task = { index, promise }
+        this.#mirrorTask = task
+        promise.finally(() => {
+            if (this.#mirrorTask === task) this.#mirrorTask = null
+        })
+        return promise
+    }
+    async #makeMirror(index) {
+        const section = this.sections[index]
+        if (!section || (section.size ?? 0) > MIRROR_MAX_SIZE || !this.#lastLayout) return false
+        let src
+        try {
+            src = await this.#acquire(index)
+        } catch {
+            this.#release(index)
+            return false
+        }
+        const wanted = () => this.#mirrorWant === index && this.#curlEnabled && this.isConnected
+            && (!this.#turn || this.#turn.target.index === index)
+        if (!src || !wanted()) {
+            this.#release(index)
+            return false
+        }
+        const view = new View({ container: this, onExpand: () => {} })
+        this.#mirrorBox.append(view.element)
+        const host = this.getRootNode()?.host
+        let ok = true
+        try {
+            await view.load(src, doc => {
+                // what the book's own view does to a section before it is laid out: language
+                // (hyphenation follows it), direction, the reader's styles
+                const lang = host?.language
+                if (lang) {
+                    doc.documentElement.lang ||= lang.canonical ?? ''
+                    if (!lang.isCJK) doc.documentElement.dir ||= lang.direction ?? ''
+                }
+                if (doc.head) {
+                    const before = doc.createElement('style')
+                    doc.head.prepend(before)
+                    const after = doc.createElement('style')
+                    doc.head.append(after)
+                    this.#styleMap.set(doc, [before, after])
+                    this.#applyStyles(doc, this.#styles)
+                }
+            }, ({ vertical, rtl }) => {
+                ok = !vertical && !rtl && vertical === this.#vertical && !!this.#lastLayout
+                return ok ? this.#lastLayout : null
+            })
+        } catch (e) {
+            console.warn(e)
+            ok = false
+        }
+        if (!ok || !wanted()) {
+            view.destroy()
+            view.element.remove()
+            this.#release(index)
+            return false
+        }
+        const old = this.#mirror, oldIndex = this.#mirrorIndex
+        this.#mirror = view
+        this.#mirrorIndex = index
+        if (old) {
+            old.destroy()
+            old.element.remove()
+            this.#release(oldIndex)
+        }
+        return true
+    }
+    #dropMirror() {
+        this.#mirrorWant = -1
+        const old = this.#mirror
+        if (!old) return
+        this.#mirror = null
+        old.destroy()
+        old.element.remove()
+        this.#release(this.#mirrorIndex)
+        this.#mirrorIndex = -1
+    }
+
     // allows one to process rects as if they were LTR and horizontal
     #getRectMapper() {
         if (this.scrolled) {
@@ -969,6 +1343,7 @@ export class Paginator extends HTMLElement {
             detail.size = 1 / (pages - 2)
         }
         this.dispatchEvent(new CustomEvent('relocate', { detail }))
+        this.#scheduleMirror()
     }
     async #display(promise) {
         const { index, src, anchor, onLoad, select } = await promise
@@ -1008,18 +1383,36 @@ export class Paginator extends HTMLElement {
         else {
             const oldIndex = this.#index
             const onLoad = detail => {
-                this.sections[oldIndex]?.unload?.()
+                this.#release(oldIndex)
                 this.setStyles(this.#styles)
                 this.dispatchEvent(new CustomEvent('load', { detail }))
             }
-            await this.#display(Promise.resolve(this.sections[index].load())
+            await this.#display(this.#acquire(index)
                 .then(src => ({ index, src, anchor, onLoad, select }))
                 .catch(e => {
+                    this.#release(index)
                     console.warn(e)
                     console.warn(new Error(`Failed to load section ${index}`))
                     return {}
                 }))
         }
+    }
+    // ars-reader: both views may show the same section; it is loaded once and unloaded when
+    // neither shows it any more
+    #acquire(index) {
+        let entry = this.#loads.get(index)
+        if (!entry) {
+            entry = { count: 0, src: Promise.resolve().then(() => this.sections[index].load()) }
+            this.#loads.set(index, entry)
+        }
+        entry.count++
+        return entry.src
+    }
+    #release(index) {
+        const entry = this.#loads.get(index)
+        if (!entry || --entry.count > 0) return
+        this.#loads.delete(index)
+        this.sections[index]?.unload?.()
     }
     async goTo(target) {
         if (this.#locked) return
@@ -1062,14 +1455,19 @@ export class Paginator extends HTMLElement {
     async #turnPage(dir, distance) {
         if (this.#locked) return
         this.#locked = true
-        const prev = dir === -1
-        const shouldGo = await (prev ? this.#scrollPrev(distance) : this.#scrollNext(distance))
-        if (shouldGo) await this.#goTo({
-            index: this.#adjacentIndex(dir),
-            anchor: prev ? () => 1 : () => 0,
-        })
-        if (shouldGo || !this.hasAttribute('animated')) await wait(100)
-        this.#locked = false
+        try {
+            // ars-reader: a page turns by its corner when the page under it is ready
+            if (distance == null && this.#curlEnabled && await this.#curlTurn(dir)) return
+            const prev = dir === -1
+            const shouldGo = await (prev ? this.#scrollPrev(distance) : this.#scrollNext(distance))
+            if (shouldGo) await this.#goTo({
+                index: this.#adjacentIndex(dir),
+                anchor: prev ? () => 1 : () => 0,
+            })
+            if (shouldGo || !this.hasAttribute('animated')) await wait(100)
+        } finally {
+            this.#locked = false
+        }
     }
     prev(distance) {
         return this.#turnPage(-1, distance)
@@ -1099,16 +1497,23 @@ export class Paginator extends HTMLElement {
         }]
         return []
     }
-    setStyles(styles) {
-        this.#styles = styles
-        const $$styles = this.#styleMap.get(this.#view?.document)
-        if (!$$styles) return
+    #applyStyles(doc, styles) {
+        const $$styles = this.#styleMap.get(doc)
+        if (!$$styles) return false
         const [$beforeStyle, $style] = $$styles
         if (Array.isArray(styles)) {
             const [beforeStyle, style] = styles
             $beforeStyle.textContent = beforeStyle
             $style.textContent = style
-        } else $style.textContent = styles
+        } else $style.textContent = styles ?? ''
+        return true
+    }
+    setStyles(styles) {
+        this.#styles = styles
+        const mirror = this.#mirror
+        if (mirror && this.#applyStyles(mirror.document, styles))
+            mirror.document?.fonts?.ready?.then(() => { if (this.#mirror === mirror) mirror.expand() })
+        if (!this.#applyStyles(this.#view?.document, styles)) return
 
         // NOTE: needs `requestAnimationFrame` in Chromium
         requestAnimationFrame(() =>
@@ -1122,9 +1527,12 @@ export class Paginator extends HTMLElement {
     }
     destroy() {
         this.#observer.unobserve(this)
+        this.#abortTurn()
+        clearTimeout(this.#mirrorTimer)
+        this.#dropMirror()
         this.#view.destroy()
         this.#view = null
-        this.sections[this.#index]?.unload?.()
+        this.#release(this.#index)
         this.#mediaQuery.removeEventListener('change', this.#mediaQueryListener)
     }
 }

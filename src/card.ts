@@ -396,6 +396,25 @@ export class Cards {
 		});
 	}
 
+	/**
+	 * The shelf, chosen by hand (the dashboard). Dates follow: a book taken back to «не начал»
+	 * forgets both, one read again forgets when it was finished.
+	 */
+	async setStatus(card: TFile, status: Status): Promise<void> {
+		await this.app.fileManager.processFrontMatter(card, (f: Fm) => {
+			migrateCard(f);
+			f[P.status] = status;
+			if (status === STATUS.new) {
+				delete f[P.started];
+				delete f[P.finished];
+			} else if (isEmpty(f[P.started])) f[P.started] = today();
+			if (status === STATUS.done) {
+				if (isEmpty(f[P.finished])) f[P.finished] = today();
+			} else delete f[P.finished];
+			reorder(f);
+		});
+	}
+
 	async savePosition(card: TFile, pos: Position, reachedEnd: boolean): Promise<void> {
 		await this.app.fileManager.processFrontMatter(card, (f: Fm) => {
 			migrateCard(f);

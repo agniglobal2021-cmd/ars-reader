@@ -189,6 +189,58 @@ def make_fb2():
 """
 
 
+def pdf_text(s):
+    """A PDF text string: UTF-16BE with a byte order mark, as hex."""
+    return "<FEFF" + s.encode("utf-16-be").hex().upper() + ">"
+
+
+def make_pdf(path, pages=9):
+    """A small PDF: coloured pages with Latin text, an outline with nested entries, Cyrillic title."""
+    rnd = random.Random(5)
+    objs = {}
+    font = 3
+    page_ids = list(range(10, 10 + pages))
+    content_ids = list(range(40, 40 + pages))
+    colours = [(0.75, 0.3, 0.3), (0.3, 0.6, 0.35), (0.3, 0.35, 0.75)]
+    for i in range(pages):
+        r, g, b = colours[i % 3]
+        lines = []
+        for _ in range(22):
+            n = rnd.randint(3, 6)
+            lines.append(" ".join(rnd.choice(["lorem", "ipsum", "dolor", "sit", "amet", "codex", "liber", "verbum", "lux", "via", "tempus"]) for _ in range(n)))
+        body = " T* ".join(f"({l}) Tj" for l in lines)
+        stream = (f"q {r} {g} {b} rg 0 545 420 50 re f Q "
+                  f"BT /F1 30 Tf 40 470 Td (Page {i + 1}) Tj ET "
+                  f"BT /F1 11 Tf 40 430 Td 16 TL {body} ET").encode()
+        objs[content_ids[i]] = b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream"
+        objs[page_ids[i]] = (f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 420 595] "
+                             f"/Resources << /Font << /F1 {font} 0 R >> >> /Contents {content_ids[i]} 0 R >>").encode()
+    objs[font] = b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"
+    objs[2] = f"<< /Type /Pages /Kids [{' '.join(f'{p} 0 R' for p in page_ids)}] /Count {pages} >>".encode()
+    # Outline: «Глава 1» p1, «Глава 2» p4 with «Часть 2.1» p5, «Глава 3» p7
+    dest = lambda k: f"[{page_ids[k]} 0 R /XYZ null null null]"  # noqa: E731
+    objs[4] = b"<< /Type /Outlines /First 5 0 R /Last 7 0 R /Count 3 >>"
+    objs[5] = f"<< /Title {pdf_text('Глава 1')} /Parent 4 0 R /Next 6 0 R /Dest {dest(0)} >>".encode()
+    objs[6] = f"<< /Title {pdf_text('Глава 2')} /Parent 4 0 R /Prev 5 0 R /Next 7 0 R /Dest {dest(3)} /First 8 0 R /Last 8 0 R /Count 1 >>".encode()
+    objs[7] = f"<< /Title {pdf_text('Глава 3')} /Parent 4 0 R /Prev 6 0 R /Dest {dest(6)} >>".encode()
+    objs[8] = f"<< /Title {pdf_text('Часть 2.1')} /Parent 6 0 R /Dest {dest(4)} >>".encode()
+    objs[1] = b"<< /Type /Catalog /Pages 2 0 R /Outlines 4 0 R /PageMode /UseOutlines /Lang (ru) >>"
+    objs[9] = f"<< /Title {pdf_text('Пробный PDF')} /Author {pdf_text('Тест Тестов')} /Producer (make_books.py) >>".encode()
+    out = bytearray(b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n")
+    offsets = {}
+    for n in sorted(objs):
+        offsets[n] = len(out)
+        out += b"%d 0 obj\n" % n + objs[n] + b"\nendobj\n"
+    size = max(objs) + 1
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % size
+    for n in range(1, size):
+        out += (b"%010d 00000 n \n" % offsets[n]) if n in offsets else b"0000000000 65535 f \n"
+    out += b"trailer\n<< /Size %d /Root 1 0 R /Info 9 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (size, xref)
+    with open(path, "wb") as fh:
+        fh.write(out)
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     make_epub(os.path.join(OUT, "Светлый град.epub"))
@@ -197,6 +249,7 @@ def main():
         fh.write(fb2)
     with zipfile.ZipFile(os.path.join(OUT, "Записки в архиве.fb2.zip"), "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("Записки на полях.fb2", fb2)
+    make_pdf(os.path.join(OUT, "Пробный.pdf"))
     with zipfile.ZipFile(os.path.join(OUT, "Комикс.cbz"), "w", zipfile.ZIP_DEFLATED) as z:
         for i, colour in enumerate([(200, 80, 80), (80, 160, 90), (70, 90, 200)], 1):
             z.writestr(f"page{i:02}.png", png(600, 900, colour))

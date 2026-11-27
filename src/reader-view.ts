@@ -6,7 +6,8 @@ import { bookData, formatOf, type BookData } from "./book-meta";
 import { STATUS, type FileFacts, type Position } from "./card";
 import { bookChapters, chapterIndex, chapterOf, type Chapter } from "./chapters";
 import { partialMd5 } from "./fingerprint";
-import { BOOK_EXTENSIONS, explainOpenError, MIME } from "./formats";
+import { BOOK_EXTENSIONS, explainOpenError, MIME, READER_EXTENSIONS } from "./formats";
+import { Sitting } from "./sessions";
 import { coverOf } from "./book-file";
 import type ReaderPlugin from "./main";
 import { cardName } from "./names";
@@ -37,6 +38,8 @@ export class ReaderView extends FileView {
 	private title = "";
 	private latest: Position | null = null;
 	private saved = "";
+	/** The sitting being read now, for the reading journal. */
+	private readonly sitting = new Sitting();
 	private reachedEnd = false;
 	private furthest = 0;
 	private loading = 0;
@@ -73,7 +76,7 @@ export class ReaderView extends FileView {
 	}
 
 	canAcceptExtension(extension: string): boolean {
-		return BOOK_EXTENSIONS.includes(extension) || extension === "zip";
+		return READER_EXTENSIONS.includes(extension);
 	}
 
 	private get labels(): string[] {
@@ -87,7 +90,10 @@ export class ReaderView extends FileView {
 		this.addAction("plus", "Мысль в конспект", () => this.openThought());
 		this.registerInterval(window.setInterval(() => void this.save(), SAVE_EVERY_MS));
 		this.registerDomEvent(document, "visibilitychange", () => {
-			if (document.visibilityState === "hidden") void this.save();
+			if (document.visibilityState === "hidden") {
+				void this.endSitting();
+				void this.save();
+			} else this.checkSitting();
 		});
 		this.registerEvent(this.app.workspace.on("css-change", () => this.applySettings()));
 		this.registerDomEvent(window, "resize", () => this.fitChrome());
@@ -122,6 +128,10 @@ export class ReaderView extends FileView {
 		menu.addItem((i) => i.setTitle("Вид").setIcon("type").onClick(() => this.openAppearance()));
 		menu.addItem((i) => i.setTitle("Данные книги").setIcon(this.plugin.icon(["square-pen", "pencil-line", "pencil"])).onClick(() => void this.openData()));
 		menu.addItem((i) => i.setTitle("Карточка книги").setIcon("file-text").onClick(() => void this.openCard()));
+		const file = this.file;
+		if (file?.extension === "pdf") {
+			menu.addItem((i) => i.setTitle("Открыть в просмотрщике PDF").setIcon("file-search").onClick(() => void this.plugin.openPdfViewer(file, this.leaf)));
+		}
 		super.onPaneMenu(menu, source);
 	}
 
@@ -203,6 +213,33 @@ export class ReaderView extends FileView {
 		this.furthest = Math.max(this.furthest, cards.furthest(card));
 		this.title = title;
 		this.updateHeader();
+		this.checkSitting();
+	}
+
+	/** You are reading this book now: it is on screen and the app is in front. */
+	private reading(): boolean {
+		return document.visibilityState === "visible" && this.containerEl.isShown() && !!this.core;
+	}
+
+	/** A sitting starts when the book comes on screen and ends when it goes. */
+	checkSitting(): void {
+		if (!this.reading()) {
+			void this.endSitting();
+			return;
+		}
+		if (this.card && this.latest && !this.sitting.active) this.sitting.touch(this.latest.percent);
+	}
+
+	/** The sitting is over: a line in this device's journal, if it lasted a minute. */
+	private async endSitting(): Promise<void> {
+		const card = this.card;
+		const s = this.sitting.end();
+		if (!card || !s) return;
+		try {
+			await this.plugin.journal.write(card, s);
+		} catch (e) {
+			console.error("[ars-reader] journal", e);
+		}
 	}
 
 	/** A known card: a 0.1 card moves into «Книги», one not started becomes «читаю», an old one gets its cover. */
@@ -269,6 +306,7 @@ export class ReaderView extends FileView {
 
 	async onUnloadFile(file: TFile): Promise<void> {
 		this.loading++;
+		await this.endSitting();
 		await this.save();
 		this.teardown();
 		await super.onUnloadFile(file);
@@ -276,6 +314,7 @@ export class ReaderView extends FileView {
 
 	async onClose(): Promise<void> {
 		this.loading++;
+		await this.endSitting();
 		await this.save();
 		this.teardown();
 		await super.onClose();
@@ -346,11 +385,18 @@ export class ReaderView extends FileView {
 		const chapter = p.tocItem?.label?.replace(/\s+/g, " ").trim() ?? "";
 		this.latest = { cfi: p.cfi, percent, chapter };
 		this.furthest = Math.max(this.furthest, percent);
+		if (this.card && this.reading()) this.sitting.touch(percent);
 		const renderer = this.core?.view.renderer as { atEnd?: boolean } | undefined;
 		if (renderer?.atEnd) this.reachedEnd = true;
-		const parts = [chapter, `${percent}%`];
-		const left = p.time?.section;
-		if (left && left > 0.5) parts.push(`${Math.round(left)} мин до конца главы`);
+		const parts = [chapter];
+		if (this.core?.isFixedLayout && p.section) {
+			// PDF and comics: real pages, no reading-time estimate
+			parts.push(`стр. ${p.section.current + 1} из ${p.section.total}`, `${percent}%`);
+		} else {
+			parts.push(`${percent}%`);
+			const left = p.time?.section;
+			if (left && left > 0.5) parts.push(`${Math.round(left)} мин до конца главы`);
+		}
 		this.statusEl.setText(parts.filter(Boolean).join(" · "));
 		if (document.activeElement !== this.sliderEl) this.sliderEl.value = String(p.fraction ?? 0);
 

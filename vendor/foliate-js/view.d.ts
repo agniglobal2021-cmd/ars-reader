@@ -8,8 +8,15 @@ export interface TOCItem {
 	id?: number;
 }
 
+/** A fixed-layout page drawn by the app (PDF): its frame, and what to do when it is shown at a scale. */
+export interface PageSource {
+	src: string;
+	/** Draws the page at `scale`; settles once it can be seen. */
+	onZoom?(o: { doc: Document; scale: number }): void | Promise<void>;
+}
+
 export interface Section {
-	load(): string | Promise<string>;
+	load(): string | PageSource | Promise<string | PageSource>;
 	unload?(): void;
 	createDocument?(): Document | Promise<Document>;
 	size?: number;
@@ -41,7 +48,7 @@ export interface Book {
 	dir?: string;
 	toc?: TOCItem[];
 	metadata?: BookMetadata;
-	rendition?: { layout?: string };
+	rendition?: { layout?: string; spread?: string };
 	getCover?(): Promise<Blob | null> | Blob | null;
 	isExternal?(href: string): boolean;
 	transformTarget?: EventTarget;

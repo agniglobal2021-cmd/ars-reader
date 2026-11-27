@@ -4,6 +4,8 @@ export type Theme = "auto" | "light" | "sepia" | "night";
 export type FontChoice = "book" | "serif" | "sans";
 export type Flow = "paginated" | "scrolled";
 export type Spread = "auto" | "single";
+/** How a page turns: by its corner like paper, sliding sideways, or at once. */
+export type TurnStyle = "curl" | "slide" | "none";
 /** «sidebar»: the right side panel (swipe from the right edge on iPad and iPhone). «beside»: a pane next to the book. */
 export type OutlinePlace = "sidebar" | "beside";
 
@@ -24,7 +26,7 @@ export interface ReaderSettings {
 	flow: Flow;
 	/** "auto": two pages side by side when the screen is wide enough. */
 	spread: Spread;
-	animated: boolean;
+	turn: TurnStyle;
 	/** Tap the left or right edge to turn the page, the middle to hide the bars. */
 	tapZones: boolean;
 	/** Book cards: «Автор — Название». */
@@ -37,6 +39,10 @@ export interface ReaderSettings {
 	coversFolder: string;
 	/** Where the outline opens. */
 	outlinePlace: OutlinePlace;
+	/** The library's note: Читальня shows its dashboard there. */
+	libraryNote: string;
+	/** Reading journal: a note per device and month. */
+	journalFolder: string;
 }
 
 export const DEFAULT_SETTINGS: ReaderSettings = {
@@ -49,13 +55,15 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	font: "book",
 	flow: "paginated",
 	spread: "auto",
-	animated: true,
+	turn: "curl",
 	tapZones: true,
 	cardsFolder: "03 Resources/Литература/Книги",
 	outlinesFolder: "03 Resources/Литература/Конспекты",
 	booksFolder: "06 Other/Books",
 	coversFolder: "06 Other/Archive/Files",
 	outlinePlace: "sidebar",
+	libraryNote: "01 Permanent Notes/009 Библиотека.md",
+	journalFolder: "06 Other/Журнал чтения",
 };
 
 export const LIMITS = {
@@ -70,10 +78,21 @@ export const SPREAD_MIN_WIDTH = 900;
 /** Place in the card is saved at most this often while reading, and always when the book closes. */
 export const SAVE_EVERY_MS = 30_000;
 
+const TURNS: readonly TurnStyle[] = ["curl", "slide", "none"];
+
+/** «Папка/Библиотека» → «Папка/Библиотека.md». Empty stays empty. */
+export function notePath(v: unknown): string {
+	if (typeof v !== "string") return "";
+	const p = cleanFolder(v);
+	return p && !/\.md$/i.test(p) ? `${p}.md` : p;
+}
+
 export function clampSettings(s: ReaderSettings): ReaderSettings {
-	// 0.2 had a card template; cards are Читальня's own now
-	const { cardTemplate: _gone, ...rest } = s as ReaderSettings & { cardTemplate?: unknown };
-	s = rest;
+	// 0.2 had a card template; cards are Читальня's own now. 0.3 had «Анимация листания» on or off:
+	// 0.4 turns pages by the corner for everyone, «Вид» has the other ways.
+	const { cardTemplate: _gone, animated: _old, ...rest } = s as ReaderSettings & { cardTemplate?: unknown; animated?: unknown };
+	s = rest as ReaderSettings;
+	if (!TURNS.includes(s.turn)) s.turn = DEFAULT_SETTINGS.turn;
 	const clamp = (v: number, { min, max }: { min: number; max: number }, d: number) =>
 		Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : d;
 	const folder = (v: unknown, d: string) => (typeof v === "string" && cleanFolder(v)) || d;
@@ -87,5 +106,7 @@ export function clampSettings(s: ReaderSettings): ReaderSettings {
 		booksFolder: folder(s.booksFolder, DEFAULT_SETTINGS.booksFolder),
 		coversFolder: folder(s.coversFolder, DEFAULT_SETTINGS.coversFolder),
 		outlinePlace: s.outlinePlace === "beside" ? "beside" : "sidebar",
+		libraryNote: notePath(s.libraryNote) || DEFAULT_SETTINGS.libraryNote,
+		journalFolder: folder(s.journalFolder, DEFAULT_SETTINGS.journalFolder),
 	};
 }

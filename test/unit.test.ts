@@ -14,6 +14,8 @@ import { get, migrateCard, migrateOutline, needsMigration, progressOf, reorder, 
 import { clampSettings, DEFAULT_SETTINGS, type ReaderSettings } from "../src/settings";
 import { check, eq, report, same } from "./check";
 import "./outline.test";
+import "./curl.test";
+import "./library.test";
 
 // ── fingerprint against an independent Python implementation of KOReader's partialMD5 ──
 {
@@ -91,6 +93,12 @@ for path in sys.argv[1:]:
 	const old = clampSettings({ ...DEFAULT_SETTINGS, cardTemplate: "T/Книга.md", booksFolder: "", coversFolder: " /Обложки/ " } as ReaderSettings);
 	check("0.2 template setting is gone", !("cardTemplate" in old));
 	check("book and cover folders", old.booksFolder === "06 Other/Books" && old.coversFolder === "Обложки", JSON.stringify(old));
+	const v3 = clampSettings({ ...DEFAULT_SETTINGS, animated: false, turn: "wobble" } as unknown as ReaderSettings);
+	check("0.3 «Анимация листания» gives way to turning by the corner", v3.turn === "curl" && !("animated" in v3), JSON.stringify(v3));
+	const lib = clampSettings({ ...DEFAULT_SETTINGS, libraryNote: " /Папка/Моя библиотека ", journalFolder: "" });
+	check("library note: a note path with .md", lib.libraryNote === "Папка/Моя библиотека.md", lib.libraryNote);
+	check("journal folder: empty means the default", lib.journalFolder === "06 Other/Журнал чтения", lib.journalFolder);
+	check("defaults: the library is the note 009", DEFAULT_SETTINGS.libraryNote === "01 Permanent Notes/009 Библиотека.md");
 }
 
 // ── properties: Russian names, old English ones read and converted ──

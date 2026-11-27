@@ -103,7 +103,7 @@ export class BookForm extends Modal {
 
 		const pick = root.createDiv({ cls: "ars-book-pick" });
 		const pickButton = pick.createEl("button", { cls: "mod-cta ars-book-pick-button", text: "Выбрать файл книги" });
-		const pickNote = pick.createDiv({ cls: "ars-reader-muted", text: "EPUB, FB2, FB2 в zip, MOBI, AZW3 или CBZ — из «Файлов»" });
+		const pickNote = pick.createDiv({ cls: "ars-reader-muted", text: "EPUB, FB2, FB2 в zip, MOBI, AZW3, CBZ или PDF — из «Файлов»" });
 		// Not display:none: some iOS versions do not open the picker for a hidden field
 		const bookInput = pick.createEl("input", { cls: "ars-book-file-input", attr: { type: "file", tabindex: "-1", "aria-hidden": "true" } });
 		pickButton.addEventListener("click", () => bookInput.click());
