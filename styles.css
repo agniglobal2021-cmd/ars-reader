@@ -27,6 +27,11 @@ body {
 	background: var(--ars-reader-page-bg, var(--background-primary));
 }
 
+/* Сильнее фона панелей Obsidian (.workspace-split.mod-root .view-content): поля у страницы — её цвета */
+.workspace-split.mod-root .view-content.ars-reader {
+	background-color: var(--ars-reader-page-bg, var(--background-primary));
+}
+
 .ars-reader-stage {
 	position: relative;
 	flex: 1 1 auto;
@@ -96,8 +101,40 @@ body {
 	display: none;
 }
 
-body.ars-reader-immersive .mobile-navbar {
+/* На iPhone и iPad — во весь экран: ни вкладок, ни панелей Obsidian, ни закреплённых боковых
+   панелей, ни строки с часами (её прячет fullscreen.ts). Края экрана, где были панели, — цвета страницы */
+body.ars-reader-immersive .mobile-navbar,
+body.ars-reader-immersive .workspace-tab-header-container,
+body.ars-reader-immersive .workspace-ribbon,
+body.ars-reader-immersive .status-bar,
+body.ars-reader-immersive .workspace-drawer.is-pinned,
+body.ars-reader-immersive .mod-root .workspace-leaf-resize-handle {
 	display: none;
+}
+
+/* Экран, поделённый на части: остаётся та, где книга. Отдельным правилом — где :has() не знают,
+   пропадает только оно */
+body.ars-reader-immersive .mod-root :is(.workspace-split, .workspace-tabs):not(:has(.ars-reader-immersive)) {
+	display: none;
+}
+
+body.ars-reader-immersive .app-container,
+body.ars-reader-immersive .workspace > .mod-root,
+body.ars-reader-immersive .workspace-tabs {
+	background-color: var(--ars-reader-fullscreen-bg, var(--background-primary));
+}
+
+/* Нижний край iPhone Obsidian затемняет под свою плавающую панель — её нет, страница до края */
+body.ars-reader-immersive .workspace > .mod-root {
+	-webkit-mask-image: none;
+	mask-image: none;
+}
+
+/* iPhone: место над страницей держала шапка Obsidian. Без неё страница начинается сразу под
+   вырезом камеры — текст не уходит под него */
+body.is-phone.ars-reader-immersive .mod-root .workspace-leaf-content.ars-reader-immersive > .view-content.ars-reader {
+	margin-top: 0;
+	padding-top: var(--safe-area-inset-top, 0px);
 }
 
 /* Подсказка «Скелет главы →»: глава позади, а скелета у неё нет */

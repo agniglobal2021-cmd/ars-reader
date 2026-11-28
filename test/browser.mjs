@@ -260,6 +260,19 @@ async function drag(p, from, to, { steps = 14, every = 16, hold = 0, midShot = n
 	return turning;
 }
 
+/** Two fingers from `from` to `to` pixels either side of a point, apart or together. */
+async function pinch(p, at, from, to, { steps = 12, every = 16 } = {}) {
+	const cdp = await p.context().newCDPSession(p);
+	const points = (d) => [{ x: at.x - d, y: at.y, id: 1 }, { x: at.x + d, y: at.y, id: 2 }];
+	await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: points(from) });
+	for (let i = 1; i <= steps; i++) {
+		await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: points(from + ((to - from) * i) / steps) });
+		await p.waitForTimeout(every);
+	}
+	await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+	await cdp.detach();
+}
+
 // ── turning by the corner ──
 {
 	const p = await page({ ...devices["iPhone 13"] }, "curl-iphone");
@@ -471,6 +484,101 @@ async function drag(p, from, to, { steps = 14, every = 16, hold = 0, midShot = n
 	await H(p, "settle", 900);
 	const s = await H(p, "summary");
 	check("cbz curl: a comic page turns by the corner", during === true && s.last.section === 1, `${during} ${JSON.stringify(s.last)}`);
+	await p.context().close();
+}
+
+// ── What turns a page: «Только потянуть страницу», «Только тап по краю» ──
+{
+	const p = await page({ ...devices["iPhone 13"] }, "turn-by");
+	const vw = 390, vh = 664;
+	await H(p, "open", EPUB, "Светлый град.epub", { turnBy: "drag" });
+	let s = await H(p, "goTo", "Глава 1");
+	await H(p, "settle", 400);
+	const f0 = s.last.fraction;
+	await p.touchscreen.tap(vw * 0.92, vh * 0.5);
+	await H(p, "settle", 700);
+	s = await H(p, "summary");
+	check("only pulling: a tap on the edge turns nothing, it shows the bars", s.last.fraction === f0 && s.chrome === 1, `${f0} → ${s.last.fraction}, chrome ${s.chrome}`);
+	await drag(p, { x: vw * 0.9, y: vh * 0.85 }, { x: vw * 0.12, y: vh * 0.7 }, { hold: 150 });
+	await H(p, "settle", 900);
+	s = await H(p, "summary");
+	check("only pulling: the pulled page turns", s.last.fraction > f0, `${f0} → ${s.last.fraction}`);
+	const f1 = s.last.fraction;
+	await H(p, "update", { turnBy: "tap" });
+	const during = await drag(p, { x: vw * 0.9, y: vh * 0.85 }, { x: vw * 0.12, y: vh * 0.7 }, { hold: 150 });
+	await H(p, "settle", 900);
+	s = await H(p, "summary");
+	check("only a tap: a pulled page stays", during === false && s.last.fraction === f1, `${during} ${f1} → ${s.last.fraction}`);
+	await p.touchscreen.tap(vw * 0.92, vh * 0.5);
+	await H(p, "settle", 1100);
+	s = await H(p, "summary");
+	check("only a tap: the tap turns", s.last.fraction > f1, `${f1} → ${s.last.fraction}`);
+	// PDF too
+	await H(p, "open", PDF, "Пробный.pdf", { turnBy: "tap" });
+	await H(p, "settle", 900);
+	await drag(p, { x: vw * 0.9, y: vh * 0.85 }, { x: vw * 0.1, y: vh * 0.7 }, { hold: 150 });
+	await H(p, "settle", 900);
+	s = await H(p, "summary");
+	check("only a tap: a pulled PDF page stays", s.last.section === 0, JSON.stringify(s.last));
+	await p.context().close();
+}
+
+// ── PDF: two fingers zoom, one moves the zoomed page ──
+{
+	const p = await page({ ...devices["iPhone 13"] }, "pdf-zoom");
+	const vw = 390, vh = 664;
+	await H(p, "open", PDF, "Пробный.pdf");
+	await H(p, "settle", 900);
+	const before = (await H(p, "pdfInfo")).filter((d) => d.visible)[0];
+	await pinch(p, { x: vw * 0.5, y: vh * 0.4 }, 40, 120);
+	await H(p, "settle", 900);
+	let z = await H(p, "zoom");
+	check("pdf zoom: two fingers apart zoom the page", z.pinch > 2.4 && z.zoomed && z.maxLeft > 300, JSON.stringify(z));
+	const after = (await H(p, "pdfInfo")).filter((d) => d.visible)[0];
+	check("pdf zoom: the zoomed page is drawn again, sharper", after.canvas > before.canvas * 1.8 && after.whole, `${before.canvas} → ${after.canvas}`);
+	await shot(p, "23-pdf-zoomed");
+	const z0 = z;
+	await drag(p, { x: vw * 0.7, y: vh * 0.7 }, { x: vw * 0.3, y: vh * 0.3 });
+	await H(p, "settle", 600);
+	z = await H(p, "zoom");
+	check("pdf zoom: one finger moves the zoomed page", z.left > z0.left + 60 && z.top > z0.top + 60, `${JSON.stringify(z0)} → ${JSON.stringify(z)}`);
+	let s = await H(p, "summary");
+	check("pdf zoom: moving the page does not turn it", s.last.section === 0, JSON.stringify(s.last));
+	// a tap on the edge turns; the next page keeps the zoom and starts at its top
+	await p.touchscreen.tap(vw * 0.92, vh * 0.5);
+	await H(p, "settle", 1100);
+	s = await H(p, "summary");
+	z = await H(p, "zoom");
+	check("pdf zoom: a tap turns the page, the zoom stays, the page starts at the top", s.last.section === 1 && z.pinch > 2.4 && z.top === 0, `${JSON.stringify(s.last)} ${JSON.stringify(z)}`);
+	// pulled on past the right edge: the next page
+	await H(p, "scrollZoomed", 100000, 0);
+	await drag(p, { x: vw * 0.8, y: vh * 0.5 }, { x: vw * 0.2, y: vh * 0.52 });
+	await H(p, "settle", 1100);
+	s = await H(p, "summary");
+	check("pdf zoom: pulled past the edge, the page turns", s.last.section === 2, JSON.stringify(s.last));
+	// two fingers together: the whole page again, and the corner turns it
+	await pinch(p, { x: vw * 0.5, y: vh * 0.5 }, 150, 30);
+	await H(p, "settle", 900);
+	z = await H(p, "zoom");
+	check("pdf zoom: fingers together, the whole page", z.pinch === 1 && !z.zoomed && z.left === 0 && z.top === 0, JSON.stringify(z));
+	const curling = await drag(p, { x: vw * 0.9, y: vh * 0.85 }, { x: vw * 0.1, y: vh * 0.7 }, { hold: 150 });
+	await H(p, "settle", 900);
+	s = await H(p, "summary");
+	check("pdf zoom: back on the whole page the corner turns again", curling === true && s.last.section === 3, `${curling} ${JSON.stringify(s.last)}`);
+	await p.context().close();
+}
+{
+	const p = await page({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true }, "pdf-zoom-ipad");
+	await H(p, "open", PDF, "Пробный.pdf");
+	await H(p, "goTo", "Глава 3");
+	await H(p, "settle", 900);
+	// one finger on each page of the spread
+	await pinch(p, { x: 590, y: 400 }, 60, 200);
+	await H(p, "settle", 900);
+	const z = await H(p, "zoom");
+	check("pdf zoom ipad: a pinch across both pages of the spread zooms", z.pinch > 2 && z.zoomed, JSON.stringify(z));
+	const info = (await H(p, "pdfInfo")).filter((d) => d.visible && d.canvas);
+	check("pdf zoom ipad: both pages zoomed and drawn", info.length === 2, JSON.stringify(info));
 	await p.context().close();
 }
 

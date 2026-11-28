@@ -6,6 +6,8 @@ export type Flow = "paginated" | "scrolled";
 export type Spread = "auto" | "single";
 /** How a page turns: by its corner like paper, sliding sideways, or at once. */
 export type TurnStyle = "curl" | "slide" | "none";
+/** What turns a page: a tap on the edge, pulling the page with a finger, or either. */
+export type TurnBy = "both" | "drag" | "tap";
 /** «sidebar»: the right side panel (swipe from the right edge on iPad and iPhone). «beside»: a pane next to the book. */
 export type OutlinePlace = "sidebar" | "beside";
 
@@ -27,8 +29,13 @@ export interface ReaderSettings {
 	/** "auto": two pages side by side when the screen is wide enough. */
 	spread: Spread;
 	turn: TurnStyle;
-	/** Tap the left or right edge to turn the page, the middle to hide the bars. */
-	tapZones: boolean;
+	/**
+	 * «drag»: only pulling the page turns it, a tap anywhere hides or shows the bars — no page
+	 * turned by a stray touch. «tap»: only a tap on the edge; a finger dragging does nothing.
+	 */
+	turnBy: TurnBy;
+	/** A book opens full screen: no Obsidian bars, no clock line; a tap in the middle brings them back. */
+	fullscreen: boolean;
 	/** Book cards: «Автор — Название». */
 	cardsFolder: string;
 	/** Outlines: «Автор — Название (конспект)». */
@@ -56,7 +63,8 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	flow: "paginated",
 	spread: "auto",
 	turn: "curl",
-	tapZones: true,
+	turnBy: "both",
+	fullscreen: false,
 	cardsFolder: "03 Resources/Литература/Книги",
 	outlinesFolder: "03 Resources/Литература/Конспекты",
 	booksFolder: "06 Other/Books",
@@ -79,6 +87,7 @@ export const SPREAD_MIN_WIDTH = 900;
 export const SAVE_EVERY_MS = 30_000;
 
 const TURNS: readonly TurnStyle[] = ["curl", "slide", "none"];
+const TURN_BY: readonly TurnBy[] = ["both", "drag", "tap"];
 
 /** «Папка/Библиотека» → «Папка/Библиотека.md». Empty stays empty. */
 export function notePath(v: unknown): string {
@@ -90,9 +99,13 @@ export function notePath(v: unknown): string {
 export function clampSettings(s: ReaderSettings): ReaderSettings {
 	// 0.2 had a card template; cards are Читальня's own now. 0.3 had «Анимация листания» on or off:
 	// 0.4 turns pages by the corner for everyone, «Вид» has the other ways.
-	const { cardTemplate: _gone, animated: _old, ...rest } = s as ReaderSettings & { cardTemplate?: unknown; animated?: unknown };
+	// 0.4 had «Тап по краю листает» on or off: off is «only pulling the page» now.
+	const { cardTemplate: _gone, animated: _old, tapZones, ...rest } = s as ReaderSettings & { cardTemplate?: unknown; animated?: unknown; tapZones?: unknown };
 	s = rest as ReaderSettings;
 	if (!TURNS.includes(s.turn)) s.turn = DEFAULT_SETTINGS.turn;
+	if (tapZones === false && s.turnBy === "both") s.turnBy = "drag";
+	if (!TURN_BY.includes(s.turnBy)) s.turnBy = DEFAULT_SETTINGS.turnBy;
+	s.fullscreen = s.fullscreen === true;
 	const clamp = (v: number, { min, max }: { min: number; max: number }, d: number) =>
 		Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : d;
 	const folder = (v: unknown, d: string) => (typeof v === "string" && cleanFolder(v)) || d;

@@ -4,6 +4,10 @@ import { PageCurl } from '../../src/curl'
 const reduceMotion = typeof matchMedia === 'function'
     ? matchMedia('(prefers-reduced-motion: reduce)') : { matches: false }
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+/** Zoom with two fingers goes up to this many times the whole page. */
+const MAX_PINCH = 5
+/** A zoomed page pulled this far past its edge turns. */
+const PAST_EDGE = 90
 const parseViewport = str => str
     ?.split(/[,;\s]/) // NOTE: technically, only the comma is valid
     ?.filter(x => x)
@@ -69,6 +73,11 @@ export class FixedLayout extends HTMLElement {
     #prepareTimer = 0
     #gesture = null
     #turn = null
+    #pinch = 1
+    #touches = new Map()
+    #pinchGesture = null
+    #pan = null
+    #glide = 0
     constructor() {
         super()
 
@@ -110,6 +119,10 @@ export class FixedLayout extends HTMLElement {
             position: absolute;
             inset: 0;
             z-index: 3;
+        }
+        :host([zoomed]) {
+            justify-content: flex-start;
+            align-items: flex-start;
         }`)
         this.#sheet = document.createElement('div')
         this.#sheet.className = 'sheet'
@@ -123,7 +136,7 @@ export class FixedLayout extends HTMLElement {
         this.addEventListener('touchstart', e => this.#onTouchStart(e), opts)
         this.addEventListener('touchmove', e => this.#onTouchMove(e), opts)
         this.addEventListener('touchend', e => this.#onTouchEnd(e))
-        this.addEventListener('touchcancel', () => this.#onTouchCancel())
+        this.addEventListener('touchcancel', e => this.#onTouchCancel(e))
 
         this.#observer.observe(this)
     }
@@ -168,7 +181,7 @@ export class FixedLayout extends HTMLElement {
                 doc.addEventListener('touchstart', e => this.#onTouchStart(e), opts)
                 doc.addEventListener('touchmove', e => this.#onTouchMove(e), opts)
                 doc.addEventListener('touchend', e => this.#onTouchEnd(e))
-                doc.addEventListener('touchcancel', () => this.#onTouchCancel())
+                doc.addEventListener('touchcancel', e => this.#onTouchCancel(e))
                 this.dispatchEvent(new CustomEvent('load', { detail: { doc, index } }))
                 const { width, height } = getViewport(doc, this.defaultViewport)
                 resolve({
@@ -184,6 +197,7 @@ export class FixedLayout extends HTMLElement {
     #render(side = this.#side) {
         if (!side) return
         this.#portrait = this.#layout({ left: this.#left, right: this.#right, center: this.#center }, side)
+        this.#fitSheet()
     }
     // sizes the frames of a spread for this screen; true when one page shows at a time.
     // `drawn` collects the pages still being drawn (PDF).
@@ -198,7 +212,7 @@ export class FixedLayout extends HTMLElement {
         const blankWidth = left.width ?? right.width ?? 0
         const blankHeight = left.height ?? right.height ?? 0
 
-        const scale = typeof this.#zoom === 'number' && !isNaN(this.#zoom)
+        const base = typeof this.#zoom === 'number' && !isNaN(this.#zoom)
             ? this.#zoom
             : (this.#zoom === 'fit-width'
                 ? (portrait || center
@@ -214,6 +228,8 @@ export class FixedLayout extends HTMLElement {
                             left.height ?? blankHeight,
                             right.height ?? blankHeight)))
             ) || 1
+        // ars-reader: zoomed with two fingers
+        const scale = base * (typeof this.#zoom === 'number' ? 1 : this.#pinch)
 
         const transform = frame => {
             let { element, iframe, width, height, blank, onZoom } = frame
@@ -276,6 +292,7 @@ export class FixedLayout extends HTMLElement {
         if (this.#portrait && this.#left?.element?.style?.display === 'none') {
             this.#side = 'left'
             this.#render()
+            this.#toTop()
             this.#reportLocation('page')
             this.#prepare()
             return true
@@ -286,6 +303,7 @@ export class FixedLayout extends HTMLElement {
         if (this.#portrait && this.#right?.element?.style?.display === 'none') {
             this.#side = 'right'
             this.#render()
+            this.#toTop()
             this.#reportLocation('page')
             this.#prepare()
             return true
@@ -376,8 +394,14 @@ export class FixedLayout extends HTMLElement {
             const right = { index: indexR, src: srcR }
             await this.#showSpread({ left, right, side })
         }
+        this.#toTop()
         this.#reportLocation(reason)
         this.#prepare()
+    }
+    // ars-reader: a new page while zoomed in begins at its top, as far left as the last one
+    #toTop() {
+        this.#stopGlide()
+        if (this.#pinch > 1) this.scrollTop = 0
     }
     async select(target) {
         await this.goTo(target)
@@ -408,7 +432,7 @@ export class FixedLayout extends HTMLElement {
 
     get #curlEnabled() {
         return this.getAttribute('turn') === 'curl' && !this.rtl && !reduceMotion.matches
-            && (this.#zoom === undefined || this.#zoom === 'fit-page')
+            && (this.#zoom === undefined || this.#zoom === 'fit-page') && this.#pinch === 1
             && (globalThis.visualViewport?.scale ?? 1) <= 1
     }
     // where a turn goes: the other page of this spread (one page on screen) or the next spread
@@ -597,26 +621,60 @@ export class FixedLayout extends HTMLElement {
             if (this.#lock === lock) this.#lock = null
         }
     }
-    #hostY(e, touch) {
+    // a finger's place over the pages, wherever it landed: around them or in a page's frame
+    #pointOf(e, touch) {
         const host = this.getBoundingClientRect()
         const node = e.target
         const doc = node?.nodeType === 9 ? node : node?.ownerDocument
         const frame = doc && doc !== document ? doc.defaultView?.frameElement : null
-        if (!frame) return touch.clientY - host.top
-        // a comic's frame is scaled: its box on screen over its own height
+        if (!frame) return { x: touch.clientX - host.left, y: touch.clientY - host.top, frame: null }
+        // a comic's frame is scaled, a page being pinched too: its box on screen over its own size
         const r = frame.getBoundingClientRect()
-        const scale = frame.offsetHeight ? r.height / frame.offsetHeight : 1
-        return r.top + touch.clientY * scale - host.top
+        const sx = frame.offsetWidth ? r.width / frame.offsetWidth : 1
+        const sy = frame.offsetHeight ? r.height / frame.offsetHeight : 1
+        return { x: r.left + touch.clientX * sx - host.left, y: r.top + touch.clientY * sy - host.top, frame }
     }
     get #zoomedIn() {
-        return (globalThis.visualViewport?.scale ?? 1) > 1
+        return this.#pinch > 1 || (globalThis.visualViewport?.scale ?? 1) > 1
             || !(this.#zoom === undefined || this.#zoom === 'fit-page')
     }
+    // «only a tap on the edge»: a finger pulling the page does not turn it
+    get #dragTurns() {
+        return this.getAttribute('drag') !== 'off'
+    }
+    // every finger this event knows of. A browser may tell a page's frame of the fingers on the
+    // other page (Chromium), or only of its own (each frame then tells of its fingers)
+    #track(e) {
+        const now = performance.now()
+        for (const t of e.touches) this.#touches.set(t.identifier, { ...this.#pointOf(e, t), t: now })
+    }
+    #forget(e) {
+        for (const t of e?.changedTouches ?? []) this.#touches.delete(t.identifier)
+    }
     #onTouchStart(e) {
+        this.#stopGlide()
+        // fingers on pages that are gone (the page turned under them) or long still are no more
+        const now = performance.now()
+        for (const [id, p] of this.#touches)
+            if ((p.frame && !p.frame.isConnected) || now - p.t > 8000) this.#touches.delete(id)
+        this.#track(e)
+        if (this.#touches.size >= 2) {
+            if (!this.#pinchGesture) this.#beginPinch()
+            return
+        }
+        if (this.#pinchGesture) return
         const touch = e.changedTouches[0]
-        this.#gesture = touch && e.touches.length === 1 && !this.#lock && !this.#zoomedIn
+        if (!touch) return
+        if (this.#pinch > 1) {
+            // zoomed in: one finger moves the page about
+            this.#gesture = null
+            this.#pan = { id: touch.identifier, x: touch.screenX, y: touch.screenY, over: 0, samples: [[e.timeStamp, touch.screenX, touch.screenY]] }
+            return
+        }
+        const at = this.#touches.get(touch.identifier)
+        this.#gesture = !this.#lock && !this.#zoomedIn && this.#dragTurns
             ? {
-                x: touch.screenX, y: touch.screenY, hostY: this.#hostY(e, touch),
+                x: touch.screenX, y: touch.screenY, hostY: at?.y ?? 0,
                 // without the curl a swipe still turns the page, when the finger lifts
                 curl: this.#curlEnabled,
                 samples: [], active: false, dead: false, ready: null, turn: null, lock: null, dx: 0, dy: 0,
@@ -624,6 +682,19 @@ export class FixedLayout extends HTMLElement {
             : null
     }
     #onTouchMove(e) {
+        this.#track(e)
+        // a second finger may first show up moving
+        if (!this.#pinchGesture && this.#touches.size >= 2) this.#beginPinch()
+        if (this.#pinchGesture) {
+            e.preventDefault()
+            this.#movePinch()
+            return
+        }
+        if (this.#pan) {
+            e.preventDefault()
+            this.#movePan(e)
+            return
+        }
         const g = this.#gesture
         if (!g || g.dead) return
         if (e.touches.length > 1 || this.#zoomedIn) {
@@ -665,6 +736,16 @@ export class FixedLayout extends HTMLElement {
         if (g.turn) this.#curl.move(dx, dy)
     }
     #onTouchEnd(e) {
+        this.#forget(e)
+        this.#track(e)
+        if (this.#pinchGesture) {
+            if (this.#touches.size < 2) this.#endPinch()
+            return
+        }
+        if (this.#pan) {
+            this.#endPan(e)
+            return
+        }
         const g = this.#gesture
         this.#gesture = null
         if (!g?.active || g.dead) return
@@ -678,10 +759,167 @@ export class FixedLayout extends HTMLElement {
             ? (last[1] - s[0][1]) / Math.max(1, last[0] - s[0][0]) : 0
         void this.#endDrag(g, v)
     }
-    #onTouchCancel() {
+    #onTouchCancel(e) {
+        this.#forget(e)
+        if (this.#pinchGesture && this.#touches.size < 2) this.#endPinch()
+        this.#pan = null
         const g = this.#gesture
         this.#gesture = null
         if (g?.active && g.curl && !g.dead) void this.#endDrag(g, null)
+    }
+
+    // ── ars-reader: two fingers zoom the page, one moves the zoomed page ──
+
+    // the page frame at a point over the pages, and where in it the point falls (0…1)
+    #anchorAt(x, y) {
+        const host = this.getBoundingClientRect()
+        let best = null
+        for (const el of this.#sheet.children) {
+            if (el.style.display === 'none') continue
+            const r = el.getBoundingClientRect()
+            const left = r.left - host.left, top = r.top - host.top
+            const inside = x >= left && x <= left + r.width
+            if (!best || inside) best = { el, u: (x - left) / (r.width || 1), v: (y - top) / (r.height || 1) }
+            if (inside) break
+        }
+        return best
+    }
+    #beginPinch() {
+        // a page the first finger began to pull lies back down
+        const g = this.#gesture
+        this.#gesture = null
+        if (g?.active && g.curl && !g.dead) void this.#endDrag(g, null)
+        this.#pan = null
+        if (this.#turn || this.#lock || !this.#spreads) return
+        const [a, b] = [...this.#touches.values()]
+        const d0 = Math.hypot(a.x - b.x, a.y - b.y)
+        if (d0 < 12) return
+        const m0 = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+        // pages drawn ahead are for the old size
+        this.#dropPreload()
+        this.#sheet.style.transformOrigin = '0 0'
+        this.#pinchGesture = {
+            d0, m0, m: m0, z0: this.#pinch, z: this.#pinch,
+            sx: this.scrollLeft, sy: this.scrollTop, anchor: this.#anchorAt(m0.x, m0.y),
+        }
+    }
+    #movePinch() {
+        const p = this.#pinchGesture
+        const pts = [...this.#touches.values()]
+        if (pts.length < 2) return
+        const [a, b] = pts
+        const d = Math.hypot(a.x - b.x, a.y - b.y)
+        const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+        // a little smaller than the whole page while the fingers are down; it springs back
+        const z = Math.min(MAX_PINCH, Math.max(0.7, p.z0 * d / p.d0))
+        const k = z / p.z0
+        // the point of the page that was under the fingers follows them
+        const cx = p.m0.x + p.sx, cy = p.m0.y + p.sy
+        this.#sheet.style.transform = `translate(${m.x + p.sx - cx * k}px, ${m.y + p.sy - cy * k}px) scale(${k})`
+        p.z = z
+        p.m = m
+    }
+    #endPinch() {
+        const p = this.#pinchGesture
+        this.#pinchGesture = null
+        if (!p) return
+        this.#sheet.style.transform = ''
+        const z = p.z < 1.06 ? 1 : p.z
+        this.#pinch = z
+        this.#render()
+        if (z === 1) {
+            this.scrollLeft = 0
+            this.scrollTop = 0
+            this.#prepare()
+            return
+        }
+        // the place of the page under the fingers stays under them
+        const a = p.anchor
+        if (!a?.el.isConnected) return
+        const host = this.getBoundingClientRect()
+        const r = a.el.getBoundingClientRect()
+        this.scrollLeft += r.left - host.left + a.u * r.width - p.m.x
+        this.scrollTop += r.top - host.top + a.v * r.height - p.m.y
+    }
+    #movePan(e) {
+        const p = this.#pan
+        const touch = [...e.changedTouches].find(t => t.identifier === p.id)
+        if (!touch) return
+        const dx = touch.screenX - p.x, dy = touch.screenY - p.y
+        p.x = touch.screenX
+        p.y = touch.screenY
+        const before = this.scrollLeft
+        this.scrollLeft = before - dx
+        this.scrollTop -= dy
+        // pulled on past the page's edge: enough of it turns the page
+        const moved = this.scrollLeft - before
+        if (Math.abs(moved) > 0.5) p.over = 0
+        else p.over -= dx
+        p.samples.push([e.timeStamp, touch.screenX, touch.screenY])
+        while (p.samples.length > 2 && e.timeStamp - p.samples[0][0] > 90) p.samples.shift()
+    }
+    #endPan(e) {
+        const p = this.#pan
+        this.#pan = null
+        if (this.#dragTurns && Math.abs(p.over) > PAST_EDGE) {
+            const forward = this.rtl ? p.over < 0 : p.over > 0
+            void (forward ? this.next() : this.prev())
+            return
+        }
+        const s = p.samples
+        const [t1, x1, y1] = s[s.length - 1]
+        if (s.length < 2 || e.timeStamp - t1 > 80) return
+        const [t0, x0, y0] = s[0]
+        const dt = Math.max(1, t1 - t0)
+        // the page glides on and slows down
+        let vx = (x1 - x0) / dt, vy = (y1 - y0) / dt
+        let last = performance.now()
+        const step = now => {
+            const ms = Math.min(48, now - last)
+            last = now
+            this.scrollLeft -= vx * ms
+            this.scrollTop -= vy * ms
+            const f = Math.pow(0.95, ms / 16)
+            vx *= f
+            vy *= f
+            this.#glide = Math.hypot(vx, vy) > 0.02 ? requestAnimationFrame(step) : 0
+        }
+        this.#glide = requestAnimationFrame(step)
+    }
+    #stopGlide() {
+        if (this.#glide) cancelAnimationFrame(this.#glide)
+        this.#glide = 0
+    }
+    // the sheet as big as the zoomed pages, so all of them can be scrolled to
+    #fitSheet() {
+        const sheet = this.#sheet
+        if (this.#pinch <= 1) {
+            if (this.hasAttribute('zoomed')) {
+                this.removeAttribute('zoomed')
+                Object.assign(sheet.style, { width: '', height: '', flex: '' })
+            }
+            return
+        }
+        let w = 0, h = 0
+        for (const el of sheet.children) {
+            if (el.style.display === 'none') continue
+            w += parseFloat(el.style.width) || 0
+            h = Math.max(h, parseFloat(el.style.height) || 0)
+        }
+        const { width, height } = this.getBoundingClientRect()
+        Object.assign(sheet.style, { flex: 'none', width: `${Math.max(w, width)}px`, height: `${Math.max(h, height)}px` })
+        this.setAttribute('zoomed', '')
+    }
+    /** How much the page is zoomed over fitting the screen: 1 is the whole page. */
+    get pinch() {
+        return this.#pinch
+    }
+    set pinch(z) {
+        this.#stopGlide()
+        this.#pinch = Math.min(MAX_PINCH, Math.max(1, Number(z) || 1))
+        this.#dropPreload()
+        this.#render()
+        if (this.#pinch === 1) this.#prepare()
     }
     async #endDrag(g, velocity) {
         try {

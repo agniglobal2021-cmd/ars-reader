@@ -83,9 +83,17 @@ export function renderAppearance(el: HTMLElement, host: SettingsHost, rerender: 
 		.addToggle((t) => t.setValue(s.spread === "auto").onChange((v) => set({ spread: v ? "auto" : "single" })));
 
 	new Setting(el)
-		.setName("Тап по краю листает")
-		.setDesc("Левый и правый край страницы. Тап в середине прячет панели.")
-		.addToggle((t) => t.setValue(s.tapZones).onChange((v) => set({ tapZones: v })));
+		.setName("Чем перелистывать")
+		.setDesc("«Только потянуть страницу» — от случайных перелистываний: тап в любом месте лишь прячет и показывает панели. Клавиатура листает всегда.")
+		.addDropdown((d) => d
+			.addOptions({ both: "Тап по краю и потянуть", drag: "Только потянуть страницу", tap: "Только тап по краю" })
+			.setValue(s.turnBy)
+			.onChange((v) => set({ turnBy: v as ReaderSettings["turnBy"] })));
+
+	new Setting(el)
+		.setName("Открывать книгу во весь экран")
+		.setDesc("Без панелей Obsidian и строки с часами. Тап в середине страницы возвращает панели.")
+		.addToggle((t) => t.setValue(s.fullscreen).onChange((v) => set({ fullscreen: v })));
 
 	new Setting(el)
 		.setName("Как перелистывается страница")

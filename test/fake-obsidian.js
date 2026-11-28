@@ -4,7 +4,8 @@
 // file from setState, an unknown view type gives the ghost pane. Used by test/obsidian.mjs.
 window.__errors = [];
 window.__notices = [];
-window.addEventListener("error", (e) => window.__errors.push("window error: " + (e.error?.stack || e.message)));
+// «ResizeObserver loop completed…» is the browser saying a layout took two passes; Obsidian ignores it
+window.addEventListener("error", (e) => { if (!/ResizeObserver loop/.test(e.message)) window.__errors.push("window error: " + (e.error?.stack || e.message)); });
 window.addEventListener("unhandledrejection", (e) => window.__errors.push("unhandled: " + (e.reason?.stack || e.reason)));
 
 // ── Obsidian's DOM helpers ──

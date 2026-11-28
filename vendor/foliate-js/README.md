@@ -21,6 +21,14 @@ Only the modules the reader uses are copied. Changes against upstream:
   when it is done, so nothing loads twice. The next spread is drawn ahead; a turn waits for a
   PDF page's picture (`onZoom` may return a promise). Without the curl a swipe still turns the
   page. `paper`/`paper-dark` attributes give the colour of the page's back.
+- `paginator.js`, `fixed-layout.js`: `drag="off"` — a drag does not turn the page; taps and keys
+  still do.
+- `fixed-layout.js`: two-finger zoom, up to 5×. The sheet scales under the fingers and is redrawn
+  sharp when they lift, the point between them staying put; the second finger is taken from
+  `touches` of the first move, where Chromium may first report it. A zoomed page pans with one
+  finger and glides on; pulled past an edge it turns (unless `drag="off"`). The zoom is kept from
+  page to page, each new page starting at its top; the `zoomed` attribute is set meanwhile, and
+  the curl waits until the page is back to its size.
 - `fb2.js`: the metadata also carries `publishYear` and `isbn` from `publish-info` (the paper
   edition). The cover is taken only from a picture inside the book (`data:`), never fetched from
   an address the book names.

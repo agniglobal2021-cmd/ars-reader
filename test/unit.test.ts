@@ -99,6 +99,15 @@ for path in sys.argv[1:]:
 	check("library note: a note path with .md", lib.libraryNote === "Папка/Моя библиотека.md", lib.libraryNote);
 	check("journal folder: empty means the default", lib.journalFolder === "06 Other/Журнал чтения", lib.journalFolder);
 	check("defaults: the library is the note 009", DEFAULT_SETTINGS.libraryNote === "01 Permanent Notes/009 Библиотека.md");
+	const noTaps = clampSettings({ ...DEFAULT_SETTINGS, tapZones: false } as unknown as ReaderSettings);
+	check("0.4 «Тап по краю листает» off: only pulling the page turns it", noTaps.turnBy === "drag" && !("tapZones" in noTaps), JSON.stringify(noTaps));
+	const taps = clampSettings({ ...DEFAULT_SETTINGS, tapZones: true } as unknown as ReaderSettings);
+	check("0.4 taps on: both ways", taps.turnBy === "both" && !("tapZones" in taps));
+	const odd = clampSettings({ ...DEFAULT_SETTINGS, turnBy: "nose", fullscreen: "yes" } as unknown as ReaderSettings);
+	check("an unknown way to turn and a stray full-screen value", odd.turnBy === "both" && odd.fullscreen === false, JSON.stringify(odd));
+	const chosen = clampSettings({ ...DEFAULT_SETTINGS, turnBy: "tap", fullscreen: true });
+	check("a chosen way to turn and full screen stay", chosen.turnBy === "tap" && chosen.fullscreen === true);
+	check("defaults: taps and pulls, the bars shown", DEFAULT_SETTINGS.turnBy === "both" && DEFAULT_SETTINGS.fullscreen === false);
 }
 
 // ── properties: Russian names, old English ones read and converted ──

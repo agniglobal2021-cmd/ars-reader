@@ -4,6 +4,7 @@ import {
 } from "obsidian";
 import { renderAppearance } from "./appearance";
 import { Cards } from "./card";
+import { setFullscreen } from "./fullscreen";
 import { deviceName, Journal, platformName, setDeviceName } from "./journal";
 import { Library } from "./library";
 import { ensureLibraryNote } from "./library-note";
@@ -176,7 +177,7 @@ export default class ReaderPlugin extends Plugin {
 	onunload(): void {
 		this.panel?.stop();
 		this.noteViews?.stop();
-		document.body.removeClass("ars-reader-immersive");
+		setFullscreen(false);
 	}
 
 	/** Cards and outlines of 0.1 and 0.2: English property names become Russian, once. */
@@ -205,7 +206,7 @@ export default class ReaderPlugin extends Plugin {
 			active.syncImmersive(true);
 			// A book restored in the background asks for its data when you come to it
 			active.askFirst();
-		} else document.body.removeClass("ars-reader-immersive");
+		} else setFullscreen(false);
 		this.followAll();
 	}
 

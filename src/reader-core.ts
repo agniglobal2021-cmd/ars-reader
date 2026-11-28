@@ -166,6 +166,8 @@ export class ReaderCore {
 			if (r.getAttribute(name) !== value) r.setAttribute(name, value);
 		};
 		set("turn", s.turn);
+		// «Only a tap on the edge»: a finger pulling the page does not turn it
+		set("drag", s.turnBy === "tap" ? "off" : "on");
 		if (this.isFixedLayout) return;
 		set("flow", s.flow);
 		set("gap", `${s.margin}%`);
@@ -210,10 +212,12 @@ export class ReaderCore {
 		const box = this.host.getBoundingClientRect();
 		if (!frame || box.width === 0) return;
 		const x = (frame.getBoundingClientRect().left + clientX - box.left) / box.width;
+		// «Only pulling the page»: no tap turns it, a tap anywhere hides or shows the bars
+		const edges = this.settings.turnBy !== "drag";
 		const act = () => {
 			if (this.destroyed) return;
-			if (this.settings.tapZones && x < 0.3) void this.goLeft();
-			else if (this.settings.tapZones && x > 0.7) void this.goRight();
+			if (edges && x < 0.3) void this.goLeft();
+			else if (edges && x > 0.7) void this.goRight();
 			else this.opts.onToggleChrome?.();
 		};
 		// After touchend the paginator snaps to the nearest page in the next frame; turning the page

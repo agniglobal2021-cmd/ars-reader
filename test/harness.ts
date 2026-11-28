@@ -310,4 +310,31 @@ async function covers() {
 	};
 }
 
-(window as unknown as { H: unknown }).H = { turning, pdfInfo, tint, chapters, open, step, goTo, update, docInfo, pwned, clickInBook, submitForm, cspProbe, summary, settle, bookFile, unreadable, covers };
+/** The zoom of a PDF or comic page and where the zoomed page is scrolled to. */
+function zoom() {
+	const r = state.core?.view.renderer as unknown as {
+		pinch?: number; scrollLeft: number; scrollTop: number; scrollWidth: number; scrollHeight: number;
+		clientWidth: number; clientHeight: number; hasAttribute(n: string): boolean;
+	} | undefined;
+	if (!r) return null;
+	return {
+		pinch: r.pinch ?? 1,
+		left: Math.round(r.scrollLeft),
+		top: Math.round(r.scrollTop),
+		maxLeft: r.scrollWidth - r.clientWidth,
+		maxTop: r.scrollHeight - r.clientHeight,
+		zoomed: r.hasAttribute("zoomed"),
+	};
+}
+
+/** Scrolls a zoomed page (as the test needs it: to an edge). */
+function scrollZoomed(left: number, top: number) {
+	const r = state.core?.view.renderer as unknown as { scrollLeft: number; scrollTop: number } | undefined;
+	if (r) {
+		r.scrollLeft = left;
+		r.scrollTop = top;
+	}
+	return zoom();
+}
+
+(window as unknown as { H: unknown }).H = { turning, pdfInfo, tint, chapters, open, step, goTo, update, docInfo, pwned, clickInBook, submitForm, cspProbe, summary, settle, bookFile, unreadable, covers, zoom, scrollZoomed };

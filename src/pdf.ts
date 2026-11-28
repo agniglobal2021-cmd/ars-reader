@@ -235,6 +235,11 @@ export async function makePdf(file: File): Promise<PdfBook> {
 		drawn.set(doc, state);
 		// The frame asks again on every layout pass; the same size is drawn or being drawn
 		if (Math.abs(state.scale - scale) < 0.001 && (state.canvas || state.task)) return state.done;
+		// Zoomed: until the sharper picture is ready, the one there stretches to the page's new size
+		if (state.canvas) {
+			state.canvas.style.width = `${base.width * zoom}px`;
+			state.canvas.style.height = `${base.height * zoom}px`;
+		}
 		state.task?.cancel();
 		state.text?.cancel();
 		const ticket = ++state.ticket;

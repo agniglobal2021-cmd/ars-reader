@@ -893,9 +893,13 @@ export class Paginator extends HTMLElement {
             vx: 0, xy: 0,
         }
         // ars-reader: with the curl, a horizontal drag pulls the page by its corner
-        this.#gesture = touch && e.touches.length === 1 && this.#curlEnabled && !this.#locked
+        this.#gesture = touch && e.touches.length === 1 && this.#curlEnabled && this.#dragTurns && !this.#locked
             ? { x: touch.screenX, y: touch.screenY, hostY: this.#hostY(e, touch), samples: [], active: false, dead: false }
             : null
+    }
+    // ars-reader: «only a tap on the edge» — a finger pulling the page leaves it where it is
+    get #dragTurns() {
+        return this.getAttribute('drag') !== 'off'
     }
     #onTouchMove(e) {
         const state = this.#touchState
@@ -903,8 +907,8 @@ export class Paginator extends HTMLElement {
         if (state.pinched) return
         state.pinched = globalThis.visualViewport.scale > 1
         if (this.scrolled || state.pinched) return
-        // ars-reader: pages that curl never slide under the finger
-        if (this.#curlEnabled) {
+        // ars-reader: pages that curl never slide under the finger, nor do pages a drag does not turn
+        if (this.#curlEnabled || !this.#dragTurns) {
             if (e.touches.length === 1) e.preventDefault()
             return
         }
@@ -938,7 +942,7 @@ export class Paginator extends HTMLElement {
             void this.#endDrag(v)
             return
         }
-        if (this.scrolled || this.#curlEnabled) return
+        if (this.scrolled || this.#curlEnabled || !this.#dragTurns) return
 
         // XXX: Firefox seems to report scale as 1... sometimes...?
         // at this point I'm basically throwing `requestAnimationFrame` at

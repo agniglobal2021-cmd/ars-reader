@@ -7,6 +7,7 @@ import { STATUS, type FileFacts, type Position } from "./card";
 import { bookChapters, chapterIndex, chapterOf, type Chapter } from "./chapters";
 import { partialMd5 } from "./fingerprint";
 import { BOOK_EXTENSIONS, explainOpenError, MIME, READER_EXTENSIONS } from "./formats";
+import { FULLSCREEN, setFullscreen } from "./fullscreen";
 import { Sitting } from "./sessions";
 import { coverOf } from "./book-file";
 import type ReaderPlugin from "./main";
@@ -20,7 +21,7 @@ import { whenIndexed } from "./vault";
 export const VIEW_TYPE = "ars-reader";
 export { BOOK_EXTENSIONS };
 
-const IMMERSIVE = "ars-reader-immersive";
+const IMMERSIVE = FULLSCREEN;
 const HINT_MS = 7000;
 
 /** A book opened without a card: the form waits until the book is on screen. */
@@ -40,6 +41,8 @@ export class ReaderView extends FileView {
 	private saved = "";
 	/** The sitting being read now, for the reading journal. */
 	private readonly sitting = new Sitting();
+	/** The page colour of the current theme, for the edges of the screen in full screen. */
+	private pageBg = "";
 	private reachedEnd = false;
 	private furthest = 0;
 	private loading = 0;
@@ -191,6 +194,8 @@ export class ReaderView extends FileView {
 				this.first = { facts: { book: file, fingerprint, format, translator: data.translator }, data, ticket, asked: false };
 			}
 			this.updateHeader();
+			// «Открывать книгу во весь экран»: only the page; a tap in the middle brings the bars back
+			if (this.plugin.settings.fullscreen) this.setImmersive(true);
 			this.askFirst();
 		} catch (e) {
 			if (ticket !== this.loading) return;
@@ -371,12 +376,14 @@ export class ReaderView extends FileView {
 		this.core?.update(this.plugin.settings, this.theme(), look);
 	}
 
-	/** Footer and empty space take the page colour of the current theme. */
+	/** Footer and empty space take the page colour of the current theme; full screen, the whole screen. */
 	private paintChrome() {
 		const look = readLook(this.contentEl);
 		const p = look.palettes[this.theme()];
 		this.contentEl.style.setProperty("--ars-reader-page-bg", p.bg);
 		this.contentEl.style.setProperty("--ars-reader-page-fg", p.fg);
+		this.pageBg = p.bg;
+		if (this.containerEl.hasClass(IMMERSIVE)) this.syncImmersive(this.app.workspace.getActiveViewOfType(ReaderView) === this);
 		return look;
 	}
 
@@ -490,9 +497,12 @@ export class ReaderView extends FileView {
 		this.fitChrome();
 	}
 
-	/** On phones the bottom bar hides with the book's bars, but only while the book is the active pane. */
+	/**
+	 * On iPhone and iPad full screen hides all of Obsidian's bars and the clock line, but only while
+	 * the book is the active pane. On a computer the book's own bars hide.
+	 */
 	syncImmersive(active: boolean): void {
-		if (Platform.isMobile) document.body.toggleClass(IMMERSIVE, active && this.containerEl.hasClass(IMMERSIVE));
+		if (Platform.isMobile) setFullscreen(active && this.containerEl.hasClass(IMMERSIVE), this.pageBg);
 	}
 
 	async openToc(): Promise<void> {
