@@ -56,7 +56,7 @@ export class LibraryView extends FileView {
 		this.contentEl.empty();
 		this.contentEl.addClass("ars-library");
 		this.ui = new LibraryUi(this.contentEl, {
-			open: (b) => void this.open(b),
+			open: (b) => void this.readBook(b),
 			menu: (b, at) => this.menu(b, at),
 			add: () => this.plugin.library.openAdd(),
 		}, (el, name) => setIcon(el, this.plugin.icon([name])));
@@ -155,7 +155,11 @@ export class LibraryView extends FileView {
 		return this.entries.find((e) => e.id === b.id);
 	}
 
-	private async open(b: UiBook): Promise<void> {
+	/**
+	 * The book of a cover, in this pane. Not «open»: Obsidian calls a view's open() to put it on
+	 * screen, and a method of that name here took its place — the dashboard stayed blank.
+	 */
+	private async readBook(b: UiBook): Promise<void> {
 		const e = this.entry(b);
 		if (!e) return;
 		if (!e.book) {
@@ -170,7 +174,7 @@ export class LibraryView extends FileView {
 		if (!e) return;
 		const m = new Menu();
 		m.addItem((i) => i.setTitle(e.status === "читаю" ? "Продолжить" : "Читать").setIcon("book-open")
-			.setDisabled(!e.book).onClick(() => void this.open(b)));
+			.setDisabled(!e.book).onClick(() => void this.readBook(b)));
 		m.addItem((i) => i.setTitle("Данные книги").setIcon("pencil")
 			.onClick(() => void this.plugin.library.openEdit(e.card, (c, f) => this.plugin.cardChanged(c, f.title))));
 		m.addItem((i) => i.setTitle("Конспект").setIcon(this.plugin.icon(["notebook-pen", "file-pen-line", "file-edit", "pencil"]))

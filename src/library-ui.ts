@@ -127,25 +127,33 @@ export function coverEl(b: UiBook, big = false): HTMLElement {
 	const box = el("div", `ars-lib-cover${big ? " is-big" : ""}`);
 	if (b.cover) {
 		const img = el("img");
-		img.src = b.cover;
 		img.alt = "";
 		img.loading = "lazy";
 		img.decoding = "async";
 		img.draggable = false;
+		// A picture that does not load (moved, not synced yet) gives way to a drawn cover
+		img.addEventListener("error", () => {
+			img.remove();
+			drawCover(box, b);
+		}, { once: true });
+		img.src = b.cover;
 		box.append(img);
-	} else {
-		box.classList.add("is-drawn");
-		box.style.setProperty("--ars-lib-pigment", PIGMENTS[hash(b.title + b.author) % PIGMENTS.length]);
-		const frame = el("div", "ars-lib-drawn");
-		const title = el("div", "ars-lib-drawn-title", b.title);
-		// The longest word fits on a line: long words get a smaller letter rather than a break
-		const longest = Math.max(1, ...b.title.split(/\s+/).map((w) => w.length));
-		title.style.fontSize = `${Math.min(15, 64 / (longest * 0.5)).toFixed(1)}cqw`;
-		frame.append(title);
-		if (b.author) frame.append(el("div", "ars-lib-drawn-author", b.author));
-		box.append(frame);
-	}
+	} else drawCover(box, b);
 	return box;
+}
+
+function drawCover(box: HTMLElement, b: UiBook): void {
+	box.classList.add("is-drawn");
+	box.style.setProperty("--ars-lib-pigment", PIGMENTS[hash(b.title + b.author) % PIGMENTS.length]);
+	const frame = el("div", "ars-lib-drawn");
+	const title = el("div", "ars-lib-drawn-title", b.title);
+	// The longest word fits on a line: long words get a smaller letter rather than a break.
+	// A letter of the gothic is about 0.62 of its size wide; the line is 64% of the cover.
+	const longest = Math.max(1, ...b.title.split(/\s+/).map((w) => w.length));
+	title.style.fontSize = `${Math.min(15, 64 / (longest * 0.62)).toFixed(1)}cqw`;
+	frame.append(title);
+	if (b.author) frame.append(el("div", "ars-lib-drawn-author", b.author));
+	box.append(frame);
 }
 
 /** A Win95 progress bar: a sunken track filled with blocks. */

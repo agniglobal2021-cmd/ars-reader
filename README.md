@@ -160,6 +160,7 @@ npm install
 npm test               # отпечаток, метаданные, свойства и их перевод, карточки, имена файлов, конспект, панель
 npm run test:browser   # книги в Chromium на размерах iPad и iPhone, уголок, PDF, данные и обложки из файлов, скриншоты в test/out (нужен Playwright)
 npm run test:library   # дашборд библиотеки на iPad и iPhone; OBSIDIAN_CSS и THEME_CSS — стили Obsidian и темы для проверки вида
+npm run test:obsidian  # собранный main.js в подобии Obsidian: загрузка, библиотека, книга; классы не подменяют методы Obsidian (после npm run build)
 npm run build          # main.js
 ```
 
